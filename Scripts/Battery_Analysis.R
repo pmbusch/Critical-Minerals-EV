@@ -4,6 +4,8 @@
 # PBH August 2023
 # Similar to MONET, but with different objectives
 
+# 2 parts separated: Battery Size and Chemistry Share
+
 # LOAD DATA -----
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
 
@@ -62,20 +64,61 @@ bat <- bat %>%
     str_detect(Cathode_Mix,"NMC 721") ~ " 721",
     str_detect(Cathode_Mix,"NMC 532|NMC532|NMC 523") ~ " 532", # I assume 523 is a typo error
     str_detect(Cathode_Mix,"NMC 622|NMC622") ~ " 622",
+    str_detect(Cathode_Mix,"NMC 442") ~ " 442",
     str_detect(Cathode_Mix,"NMC 811") ~ " 811",
     str_detect(Cathode_Mix,"NMCA 89:04:04:03") ~ " 89:4:4:3",
     T ~ ""))
-bat %>% group_by(mix,Cathode_Mix) %>% tally() %>% arrange(desc(n))
+bat %>% group_by(Cathode_Chemistry,Cathode_Mix,mix) %>% tally() %>% arrange(desc(n))
 
 bat <- bat %>% 
   mutate(chemistry=paste0(Cathode_Chemistry,mix))
 
-# aggregate chemistry - above 2%
+# share of ratios of NMC
+bat %>% 
+  filter(chemistry %in% c("NMC","NMC 111","NMC 811","NMC 622","NMC 532")) %>% 
+  filter(Propulsion!="FCEV") %>% 
+  # mutate(Sales_Region="World") %>%
+  group_by(Propulsion,Sales_Region,chemistry) %>% 
+  summarise(MWh_2021=sum(MWh_2021)) %>% ungroup() %>% 
+  group_by(Propulsion,Sales_Region) %>% 
+  mutate(perc=MWh_2021/sum(MWh_2021)) %>% 
+  ggplot(aes(Sales_Region,perc,fill=chemistry))+
+  geom_col()+
+  coord_flip()+
+  facet_wrap(~Propulsion,nrow=1)
+
+# Do it by world shares of NMC, easier to explain. Only major difference will be Japan
+# Do not distinguis by propulsion, BEV is dominant
+nmc_share <- bat %>% 
+  filter(chemistry %in% c("NMC 111","NMC 811","NMC 622","NMC 532")) %>% 
+  filter(Propulsion!="FCEV") %>% 
+  group_by(chemistry) %>% 
+  summarise(MWh_2021=sum(MWh_2021)) %>% ungroup() %>% 
+  # group_by(Propulsion) %>% 
+  mutate(perc=MWh_2021/sum(MWh_2021)) 
+
+
+
+# aggregate chemistry - above 2% (for figure)
 chem_selected <- bat %>% group_by(chemistry) %>% summarise(x=sum(MWh_2022,na.rm=T)) %>%
   arrange(desc(x)) %>% ungroup() %>% mutate(perc=x/sum(x)*100) %>% 
   filter(perc>2) %>% pull(chemistry)
+chem_selected <- c(chem_selected,"NMC 111","LMO")
 bat <- bat %>% mutate(chemistry=if_else(chemistry %in% chem_selected,chemistry,"Other"))
 rm(chem_selected)
+
+# other share
+other_share <- bat %>% 
+  filter(!(chemistry %in% c("NMC","Other"))) %>% 
+  filter(Propulsion!="FCEV") %>% 
+  group_by(chemistry) %>% 
+  summarise(MWh_2021=sum(MWh_2021)) %>% ungroup() %>% 
+  # group_by(Propulsion) %>% 
+  mutate(perc=MWh_2021/sum(MWh_2021)) 
+
+write.csv(nmc_share,"Results/Battery/NMC_share.csv",row.names = F)
+write.csv(other_share,"Results/Battery/OtherBattery_share.csv",row.names = F)
+
 
 ## Flat years -----
 bat <- bat %>% 
@@ -111,7 +154,32 @@ bat$year %>% unique()
 bat$Propulsion %>% unique() # "PHEV" "BEV"  "FCEV"
 bat$chemistry %>% unique()
 
+# Distribute NMC and Other as averages
+nmc_share
+bat_nmc <- bat %>% filter(chemistry=="NMC") %>% rename(x=chemistry)
+# bat_nmc %>% filter(year==2022) %>%  group_by(Propulsion,year) %>% summarise(MWh=sum(MWh,na.rm=T))
+bat_nmc <- bat_nmc %>% 
+  filter(MWh>0, unit>0) %>% 
+  left_join(mutate(nmc_share,x="NMC",MWh_2021=NULL),relationship = "many-to-many") %>% 
+  mutate(MWh=MWh*perc,unit=unit*perc,
+         perc=NULL,x=NULL)
+# bat_nmc %>% filter(year==2022) %>%  group_by(Propulsion,year) %>% summarise(MWh=sum(MWh,na.rm=T))
+# add back to database
+bat <- bat %>% filter(chemistry!="NMC") %>% rbind(bat_nmc)
+rm(bat_nmc)
 
+# others share - same method
+other_share
+bat_other <- bat %>% filter(chemistry=="Other") %>% rename(x=chemistry)
+bat_other <- bat_other %>% 
+  filter(MWh>0, unit>0) %>% 
+  left_join(mutate(nmc_share,x="Other",MWh_2021=NULL),relationship = "many-to-many") %>% 
+  mutate(MWh=MWh*perc,unit=unit*perc,
+         perc=NULL,x=NULL)
+bat <- bat %>% filter(chemistry!="Other") %>% rbind(bat_other)
+rm(bat_other)
+
+bat$chemistry %>% unique()
 
 # Aggregate data -----
 
@@ -207,12 +275,60 @@ bat_country <- bat_country %>% rename(Country=ICCT_Country,
 
 bat_region2 <- bat_region %>% filter(Year==2022)
 
-write.csv(bat_world,"Results/battery_size_world.csv",row.names = F)
-write.csv(bat_region2,"Results/battery_size_region.csv",row.names = F)
-write.csv(bat_country,"Results/battery_size_country.csv",row.names = F)
+write.csv(bat_world,"Results/Battery/battery_world.csv",row.names = F)
+write.csv(bat_region2,"Results/Battery/battery_region.csv",row.names = F)
+write.csv(bat_country,"Results/Battery/battery_country.csv",row.names = F)
+
+## Save battery size -----
+bat_world_size <- bat_world %>% group_by(Powertrain,Year) %>% 
+  reframe(MWh=sum(MWh),unit=sum(unit)) %>% ungroup() %>% 
+  mutate(kwh_veh_total=MWh/unit*1e3)
+write.csv(bat_world_size,"Results/Battery/battery_size_world.csv",row.names = F)
+
+bat_region_size <- bat_region %>% group_by(Powertrain,Year,Region) %>% 
+  reframe(MWh=sum(MWh),unit=sum(unit)) %>% ungroup() %>% 
+  mutate(kwh_veh_total=MWh/unit*1e3)
+write.csv(bat_region_size,"Results/Battery/battery_size_region.csv",row.names = F)
+
+bat_country_size <- bat_country %>% group_by(Powertrain,Year,Country) %>% 
+  reframe(MWh=sum(MWh),unit=sum(unit)) %>% ungroup() %>% 
+  mutate(kwh_veh_total=MWh/unit*1e3)
+write.csv(bat_country_size,"Results/Battery/battery_size_country.csv",row.names = F)
+
+## Save Chem Share ----------
+bat_world_chem <- bat_world %>% group_by(Powertrain,Year,chemistry) %>% 
+  reframe(MWh=sum(MWh)) %>% ungroup() %>% group_by(Powertrain,Year) %>% 
+  mutate(chem_share_mwh=MWh/sum(MWh))
+write.csv(bat_world_chem,"Results/Battery/battery_chem_world.csv",row.names = F)
+
+bat_region_chem <- bat_region %>% group_by(Powertrain,Year,Region,chemistry) %>% 
+  reframe(MWh=sum(MWh)) %>% ungroup() %>%  group_by(Powertrain,Year,Region) %>% 
+  mutate(chem_share_mwh=MWh/sum(MWh))
+write.csv(bat_region_chem,"Results/Battery/battery_chem_region.csv",row.names = F)
+
+bat_country_chem <- bat_country %>% group_by(Powertrain,Year,Country,chemistry) %>% 
+  reframe(MWh=sum(MWh)) %>% ungroup() %>%  group_by(Powertrain,Year,Country) %>% 
+  mutate(chem_share_mwh=MWh/sum(MWh))
+write.csv(bat_country_chem,"Results/Battery/battery_chem_country.csv",row.names = F)
 
 
 # FIGURES ----
+
+# Bat size
+bat_region %>% 
+  filter(Powertrain=="BEV",Year==2022) %>% 
+  mutate(lab_kwh=paste0(round(kwh_veh_total,0),"")) %>% 
+  ggplot(aes(reorder(Region,kwh_veh_total),kwh_veh_total))+
+  geom_col(fill="brown")+
+  geom_text(aes(label=lab_kwh),nudge_y = 3,size=20*5/14 * 0.8)+
+  coord_flip(expand = T)+
+  labs(x="",y="Average Battery Size per BEV [kWh]")
+f.fig.save("Figures/BatterySize2022.png")
+
+
+chem_levels <- c("NMC 111","NMC 532","NMC 622","NMC 721","NMC 811","NMC 89:4:4:3",
+                 "NCA","LFP","LMO")
+bat_region <- bat_region %>% mutate(chemistry=factor(chemistry,chem_levels))
 
 
 bat_region %>% 
@@ -261,14 +377,21 @@ bat_region %>%
   # facet_wrap(~Propulsion,scales = "free_y",dir = "v")+
   coord_flip(expand = F)+
   labs(x="",y=paste0("kWh Battery Capacity per ",prop," Vehicle"),fill="Battery Chemistry Share")+
-  scale_fill_viridis_d()+
+  scale_fill_viridis_d(option="turbo")+
   # tidytext::scale_x_reordered()+
   theme_bw(20)+ 
   theme(panel.grid.major = element_blank(),
         legend.position = "bottom")+
-  guides(fill = guide_legend(reverse = T))
+  guides(fill = guide_legend(reverse = T,byrow = T))
 
 f.fig.save(sprintf(fig_name,paste0(prop,"_stackChem")))
+
+# Wolrd averages by chem
+bat_world %>% 
+  filter(Powertrain=="BEV") %>% 
+  mutate(perc=MWh/sum(MWh)) %>% 
+  dplyr::select(chemistry,perc) %>% arrange(desc(perc))
+
 
 
 # EoF

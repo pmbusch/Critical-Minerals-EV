@@ -21,7 +21,7 @@ lapply(list_libraries, require, character.only = TRUE)
 
 rm(list_libraries) 
 
-theme_set(theme_bw(20)+ theme(panel.grid.major = element_blank(),
+theme_set(theme_bw(11)+ theme(panel.grid.major = element_blank(),
                               axis.title.y=element_text(angle=0)))
 
 # Functions -----
@@ -37,7 +37,10 @@ rm(file.sources)
 power_level <- read_excel("Data/Dimensions.xlsx",sheet="Powertrain")$Powertrain
 region_level <- read_excel("Data/Dimensions.xlsx",sheet="Region")$Region
 country_level <- read_excel("Data/Dimensions.xlsx",sheet="Country")$Country
+vehicle_level <- read_excel("Data/Dimensions.xlsx",sheet="Vehicle")$Vehicle
+scen_level <- c("Baseline","Momentum","Ambitious")
 
+min_interest <- c("Lithium","Nickel","Cobalt","Manganese")
 
 # Create a named vector of colors for each region
 region_colors <- c("United States" = "#1f78b4",
@@ -59,5 +62,6 @@ region_colors <- c("United States" = "#1f78b4",
                    "Middle East" = "#8b4513",
                    "Africa" = "#4682b4",
                    "Rest of the World"="#808080")
+
 
 # EoF
