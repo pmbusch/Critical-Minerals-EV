@@ -68,7 +68,7 @@ evVol %>% filter(Powertrain=="BEV") %>%
 (y=unique(evVol$chemistry))
 
 match(x,y) # missing: LCO, LMNO, Other
-match(y,x) # missing: NMC 721, NMC 89:4:4:3 - add to NMC 811 growth
+match(y,x) # missing: NMC 721, NMCA 89:4:4:3 - add to NMC 811 growth
 
 ## extend to Benchmark to 2050 ------ 
 
@@ -129,7 +129,7 @@ bench <- df_ext %>% filter(year>2021) %>%
 # PROJECT EV volumes share
 evVol <- read.csv("Results/Battery/battery_world.csv")
 evVol <- evVol %>% 
-  mutate(chem_eq=if_else(chemistry %in% c("NMC 721","NMC 89:4:4:3"),"NMC 811",chemistry)) %>% 
+  mutate(chem_eq=if_else(chemistry %in% c("NMC 721","NMCA 89:4:4:3"),"NMC 811",chemistry)) %>% 
   left_join(bench,relationship = "many-to-many") %>% 
   mutate(share_units=share_units*ratio2022,Year=NULL,chem_eq=NULL,ratio2022=NULL,
          MWh=NULL,unit=NULL,kwh_veh=NULL,kwh_veh_total=NULL)
@@ -154,7 +154,7 @@ f.fig.save("Figures/Battery/EV_Bench_Battery_Adjusted.png")
 ## Region wise
 evVol_region <- read.csv("Results/Battery/battery_region.csv")
 evVol_region <- evVol_region %>% 
-  mutate(chem_eq=if_else(chemistry %in% c("NMC 721","NMC 89:4:4:3"),"NMC 811",chemistry)) %>% 
+  mutate(chem_eq=if_else(chemistry %in% c("NMC 721","NMCA 89:4:4:3"),"NMC 811",chemistry)) %>% 
   left_join(bench,relationship = "many-to-many") %>% 
   mutate(share_units=share_units*ratio2022,Year=NULL,chem_eq=NULL,ratio2022=NULL,
          MWh=NULL,unit=NULL,kwh_veh=NULL,kwh_veh_total=NULL) %>%
@@ -182,7 +182,7 @@ f.fig.save("Figures/Battery/EV_Bench_Battery_AdjustedRegion.png")
 ## Country Wise
 evVol_Country <- read.csv("Results/Battery/battery_Country.csv")
 evVol_Country <- evVol_Country %>% 
-  mutate(chem_eq=if_else(chemistry %in% c("NMC 721","NMC 89:4:4:3"),"NMC 811",chemistry)) %>% 
+  mutate(chem_eq=if_else(chemistry %in% c("NMC 721","NMCA 89:4:4:3"),"NMC 811",chemistry)) %>% 
   left_join(bench,relationship = "many-to-many") %>% 
   mutate(share_units=share_units*ratio2022,Year=NULL,chem_eq=NULL,ratio2022=NULL,
          MWh=NULL,unit=NULL,kwh_veh=NULL,kwh_veh_total=NULL) %>%
@@ -205,7 +205,7 @@ evVol_Country %>%
 # better to use regionwise projections
 # f.fig.save("Figures/EV_Bench_Battery_AdjustedCountry.png")
 
-# Battery Chemistr Scenarios -----------
+# Battery Chemistry Scenarios -----------
 # Key idea: set target goals and achieve them proportionally through time
 
 ## LFP doubles ------------
@@ -360,3 +360,5 @@ evVol_NMC %>%
   labs(x="",y="EV \n Market \n Share",fill="Chemistry")
 
 f.fig.save("Figures/Battery/EV_Bench_Battery_AdjustedNMC811Region.png")
+
+# EoF

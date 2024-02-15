@@ -19,7 +19,7 @@ sum(bat$MWh_2018) # 74674
 
 # select column of interest
 bat <- bat %>% 
-  dplyr::select(Sales_Region,Sales_Sub_Region,Sales_Country,
+  dplyr::select(Sales_Region,Sales_Sub_Region,Sales_Country, Global_Segment,
                 Vehicle_Production_Region,Vehicle_Production_Country,
                 Propulsion,Cathode_Chemistry,Cathode_Mix,
                 `2010`,`2011`,`2012`,`2013`,`2014`,`2015`,`2016`,`2017`,`2018`,
@@ -33,7 +33,12 @@ bat %>% mutate(x=1) %>% dplyr::select(x,MWh_2010_earlier,MWh_2011,MWh_2012,MWh_2
                                       MWh_2016,MWh_2017,MWh_2018,MWh_2019,MWh_2020,MWh_2021,MWh_2022) %>% 
   pivot_longer(c(-x), names_to = "key", values_to = "value") %>% 
   group_by(key) %>% summarise(MWh=sum(value))
-  
+
+# totals EV by year
+bat %>% mutate(x=1) %>% dplyr::select(x,`2011`,`2012`,`2013`,`2014`,`2015`,
+                                      `2016`,`2017`,`2018`,`2019`,`2020`,`2021`,`2022`) %>% 
+  pivot_longer(c(-x), names_to = "key", values_to = "value") %>% 
+  group_by(key) %>% summarise(MWh=sum(value,na.rm=T)/1e6)
   
 # DATA WRANGLING -----
 
@@ -66,7 +71,7 @@ bat <- bat %>%
     str_detect(Cathode_Mix,"NMC 622|NMC622") ~ " 622",
     str_detect(Cathode_Mix,"NMC 442") ~ " 442",
     str_detect(Cathode_Mix,"NMC 811") ~ " 811",
-    str_detect(Cathode_Mix,"NMCA 89:04:04:03") ~ " 89:4:4:3",
+    str_detect(Cathode_Mix,"NMCA 89:04:04:03") ~ "A 89:4:4:3",
     T ~ ""))
 bat %>% group_by(Cathode_Chemistry,Cathode_Mix,mix) %>% tally() %>% arrange(desc(n))
 
@@ -76,6 +81,7 @@ bat <- bat %>%
 # share of ratios of NMC
 bat %>% 
   filter(chemistry %in% c("NMC","NMC 111","NMC 811","NMC 622","NMC 532")) %>% 
+                          # "NMC 721","NMCA 89:4:4:3","NMC 442")) %>% 
   filter(Propulsion!="FCEV") %>% 
   # mutate(Sales_Region="World") %>%
   group_by(Propulsion,Sales_Region,chemistry) %>% 
@@ -88,15 +94,15 @@ bat %>%
   facet_wrap(~Propulsion,nrow=1)
 
 # Do it by world shares of NMC, easier to explain. Only major difference will be Japan
-# Do not distinguis by propulsion, BEV is dominant
+# Do not distinguish by propulsion, BEV is dominant
 nmc_share <- bat %>% 
-  filter(chemistry %in% c("NMC 111","NMC 811","NMC 622","NMC 532")) %>% 
+  filter(chemistry %in% c("NMC 111","NMC 811","NMC 622","NMC 532")) %>%
+  #   "NMC 721","NMCA 89:4:4:3" not considered to go towards NMC with no detail
   filter(Propulsion!="FCEV") %>% 
   group_by(chemistry) %>% 
   summarise(MWh_2021=sum(MWh_2021)) %>% ungroup() %>% 
   # group_by(Propulsion) %>% 
   mutate(perc=MWh_2021/sum(MWh_2021)) 
-
 
 
 # aggregate chemistry - above 2% (for figure)
@@ -153,6 +159,7 @@ bat$Sales_Country %>% unique() # 116
 bat$year %>% unique()
 bat$Propulsion %>% unique() # "PHEV" "BEV"  "FCEV"
 bat$chemistry %>% unique()
+
 
 # Distribute NMC and Other as averages
 nmc_share
@@ -249,6 +256,15 @@ eq <- read_excel("Data/Eq_Countries_ICCT_EVV.xlsx",sheet="Eq_Country2")
 bat_country <- bat %>% left_join(eq,by=c("Sales_Country"="EVV_Country")) %>% 
   filter(!is.na(ICCT_Country))
 
+# historical EV sales for stock model
+ev_historical <- bat_country %>% 
+  filter(year>2014) %>% 
+  group_by(Propulsion,year,ICCT_Country,chemistry) %>% 
+  summarise(unit=sum(unit,na.rm=T)) %>% ungroup()
+ev_historical %>% group_by(year) %>% reframe(unit=sum(unit)/1e6)
+write.csv(ev_historical,"Results/Intermediate Results/historicalEV_sales.csv",
+          row.names = F)
+
 bat_country <- bat_country %>% 
   filter(year==2022) %>% 
   group_by(Propulsion,year,ICCT_Country,chemistry) %>% 
@@ -326,7 +342,7 @@ bat_region %>%
 f.fig.save("Figures/BatterySize2022.png")
 
 
-chem_levels <- c("NMC 111","NMC 532","NMC 622","NMC 721","NMC 811","NMC 89:4:4:3",
+chem_levels <- c("NMC 111","NMC 532","NMC 622","NMC 721","NMC 811","NMCA 89:4:4:3",
                  "NCA","LFP","LMO")
 bat_region <- bat_region %>% mutate(chemistry=factor(chemistry,chem_levels))
 
@@ -392,6 +408,22 @@ bat_world %>%
   mutate(perc=MWh/sum(MWh)) %>% 
   dplyr::select(chemistry,perc) %>% arrange(desc(perc))
 
+
+bat_country %>% 
+  filter(Powertrain==prop) %>% 
+  filter(Year=="2022") %>% 
+  filter(Country %in% c(region_level)) %>% 
+  ggplot(aes(reorder(Country,kwh_veh_total),kwh_veh,fill=fct_rev(chemistry)))+
+  geom_col(position = "stack")+
+  # facet_wrap(~Propulsion,scales = "free_y",dir = "v")+
+  coord_flip(expand = F)+
+  labs(x="",y=paste0("kWh Battery Capacity per ",prop," Vehicle"),fill="Battery Chemistry Share")+
+  scale_fill_viridis_d(option="turbo")+
+  # tidytext::scale_x_reordered()+
+  theme_bw(20)+ 
+  theme(panel.grid.major = element_blank(),
+        legend.position = "bottom")+
+  guides(fill = guide_legend(reverse = T,byrow = T))
 
 
 # EoF

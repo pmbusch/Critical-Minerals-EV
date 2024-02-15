@@ -13,7 +13,7 @@ mineral <- mineral %>%
 
 # Figure
 mineral %>% 
-  filter(chemistry!="LMO-LTO") %>% 
+  # filter(chemistry!="LMO-LTO") %>% 
   ggplot(aes(chemistry,kg_per_kwh,fill=chemistry))+
   geom_col()+
   facet_wrap(~Mineral,scales = "free_x")+
@@ -22,10 +22,23 @@ mineral %>%
   labs(x="Chemistry",y="Mineral Intensity [kg per kWh]")+
   theme(legend.position = "none")
 
-f.fig.save("Figures/MinIntensity.png")
+f.fig.save("Figures/MinIntensity.png",h=6)
 
 
+# Swap
 
+# Figure
+mineral %>% 
+  filter(chemistry!="LMO-LTO") %>%
+  filter(chemistry!="NMC 95") %>% 
+  ggplot(aes(chemistry,kg_per_kwh,fill=Mineral))+
+  geom_col(position = "dodge")+
+  coord_flip(expand = F)+
+  scale_fill_manual(values=c("Lithium" = "darkblue", "Nickel" = "darkgreen", "Cobalt" = "darkred"))+
+  labs(x="",y="Mineral Intensity [kg per kWh]",fill="")+
+  guides(fill = guide_legend(reverse=TRUE))+
+  theme(legend.position = c(0.9,0.8))
 
+f.fig.save("Figures/MinIntensity2.png")
 
 # EoF
