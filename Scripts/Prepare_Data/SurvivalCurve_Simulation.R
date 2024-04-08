@@ -118,8 +118,8 @@ ggplot(data_fig,aes(year,value,col=key,group=key))+
 # Other parameters
 ev_age_newLib <- 8 # year were a new battery is needed, after that an old battery will be sufficient
 # 8 years assuming a warranty over this period
-max_reuse_lib <- 0.8
-ssps_perc <- 0.8
+max_reuse_lib <- 0.5
+ssps_perc <- 0.7
 recycling_perc <- 1-ssps_perc
 
 
@@ -213,7 +213,8 @@ for (veh in vehicles){
       # Loop through years
       icct$Year %>% range()
       icct$add_LIB <-icct$LIB_SSPS <- icct$LIB_recycling <- icct$LIB_reuse_EV <- icct$EV_Stock <- 0
- 
+      icct$add_LIB_vector <-icct$LIB_SSPS_vector <- icct$LIB_recycling_vector <- c()
+        
       for (y in start_year:2050){
         
         # if (y==2043){break} # debbug
@@ -299,10 +300,13 @@ for (veh in vehicles){
         # add EVs with new batteries to stock - note, no other battery with 0 age
         new_matrix[,1] <-  ev_need
         
-        # assign numbers for Year 
+        # assign numbers for Year - totals and vector
         icct$add_LIB[y-start_year+1] <- round(sum(ev_need),0) # additional new LIBs required
+        icct$add_LIB_vector[y-start_year+1] <- list(round(ev_need[-1],0)) 
         icct$LIB_SSPS[y-start_year+1] <- round(sum(lib_available)*ssps_perc,0) # outflow for SSPS use
+        icct$LIB_SSPS_vector[y-start_year+1] <- list(round(lib_available[-1]*ssps_perc,0)) # outflow for SSPS use
         icct$LIB_recycling[y-start_year+1] <- round(sum(lib_available)*recycling_perc,0)
+        icct$LIB_recycling_vector[y-start_year+1] <- list(round(lib_available[-1]*recycling_perc,0))
         icct$LIB_reuse_EV[y-start_year+1] <- round(allocation,0)
         icct$EV_Stock[y-start_year+1] <- round(sum(new_matrix),0)
         
@@ -348,7 +352,7 @@ icct$LIB_recycling[29]/1e6 # 0.2M
 head(icct)
 data_fig <- icct %>%
   filter(Year>2021) %>% 
-  dplyr::select(-EV_Stock) %>% 
+  dplyr::select(-EV_Stock,-add_LIB_vector,-LIB_SSPS_vector,-LIB_recycling_vector) %>% 
   rename(`Additional LIB \n required`=add_LIB) %>% 
   rename(`LIBs for \n recycling`=LIB_recycling) %>% 
   rename(`2-hand LIBs \n for SSPS`=LIB_SSPS) %>% 
@@ -363,7 +367,8 @@ data_fig2 %>%
   ggplot(aes(Year,value,col=key,group=key))+
   geom_line(linewidth=1)+
   geom_text(data=filter(data_fig2,Year==2050),x=2052,aes(label=key),
-            nudge_y = 0.2,lineheight = 0.8,
+            nudge_y = c(0,5,-5,2,18),
+            lineheight = 0.8,
             size=11*5/14 * 0.8)+
   facet_wrap(~Scenario)+
   labs(x="",y="Units, in millions",col="")+
@@ -372,8 +377,8 @@ data_fig2 %>%
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050), 
                      labels = c("2022", "2030", "2040", "2050"))
 
-f.fig.save("Figures/Reuse_Battery/World_outflows_0reuse.png")
-# f.fig.save("Figures/Reuse_Battery/World_outflows.png")
+# f.fig.save("Figures/Reuse_Battery/World_outflows_0reuse.png")
+f.fig.save("Figures/Reuse_Battery/World_outflows.png")
 
 # All vehicles
 data_fig2 <- data_fig %>% filter(Powertrain=="BEV")
@@ -384,6 +389,7 @@ data_fig2 %>%
   facet_wrap(~Vehicle,scales = "free_y")+
   labs(x="",y="Units, in millions",col="Flow",caption="Different scales per panel.")+
   coord_cartesian(xlim=c(2022,2050))+
+  guides(col= guide_legend(reverse = TRUE))+
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050), 
                      labels = c("2022", "2030", "2040", "2050"))
 
@@ -414,9 +420,12 @@ icct <- icct %>%
          perc_lib_recycling=LIB_recycling/Sales)
 icct
 
-icct %>% dplyr::select(Year,Scenario,Vehicle,Powertrain,
-                       perc_add_lib,perc_lib_reuse_ev,perc_lib_ssps,perc_lib_recycling) %>% 
-  write.csv("Data/Survival Curves/world_outflows_LIB.csv",row.names = F)
+# Save vector variables as strings
+icct <- icct %>%
+  rowwise() %>%
+  mutate_if(is.list, ~paste(unlist(.), collapse = '|')) 
+
+write.csv(icct,"Results/Intermediate Results/world_outflows_LIB.csv",row.names = F)
 
 
 # Survival Curve - Normal CDF --------

@@ -1,7 +1,7 @@
 
 # Function to duplicate scenarios results when aggregating (group_by) results from long table
 # Key idea: Store results with no Scenario as "No Scenario", then replicate them for results
-# that are scenario dependent. This saves a lot of storgage
+# that are scenario dependent. This saves a lot of storage
 # Tidyverse pipeline %>% friendly. 
 # list_scen: vector with scenario names to duplicate (populate)
 f.duplicateScenarios <- function(df,list_scen,

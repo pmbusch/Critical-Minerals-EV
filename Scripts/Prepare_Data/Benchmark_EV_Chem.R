@@ -361,4 +361,158 @@ evVol_NMC %>%
 
 f.fig.save("Figures/Battery/EV_Bench_Battery_AdjustedNMC811Region.png")
 
+## Solid State Adoption --------------
+# Half of NMC goes towards solid state, same cathodes
+# Electrolyte LPS: Li3PS4
+# Anode: Li metal
+
+# Start at 2030, reach half of share by 2040, then half for rest of period
+share_difussion <- tibble(year=2022:2050,
+       share_multiplier=c(rep(0,7),
+                          seq(0,1/2,length.out=12),
+                          rep(0.5,10)))
+# Create new rows duplicate based on NMC - with only half of share
+evVol_NMC <- evVol %>% filter(str_detect(chemistry,"NMC|NCA")) %>% 
+  mutate(chemistry=paste0("SS ",chemistry)) %>% 
+  left_join(share_difussion) %>% 
+  mutate(share_units=share_units*share_multiplier, share_multiplier=NULL)
+
+# add to original, but reduce to half
+evVol_NMC <- evVol %>%
+  left_join(share_difussion) %>% 
+  mutate(share_units=if_else(str_detect(chemistry,"NMC|NCA"),
+                             share_units*(1-share_multiplier),
+                             share_units),share_multiplier=NULL) %>% 
+  rbind(evVol_NMC) %>% 
+  group_by(Powertrain,year) %>% mutate(share_units=share_units/sum(share_units))
+
+evVol_NMC %>% group_by(year) %>% reframe(sum(share_units))
+
+write.csv(evVol_NMC,"Results/Battery/Chemistry_Scenarios/SolidState_scen_world.csv",row.names = F)
+
+evVol_NMC %>% 
+  filter(Powertrain=="BEV") %>% 
+  ggplot(aes(year,share_units,fill=chemistry))+
+  geom_area()+
+  coord_cartesian(expand = F)+
+  scale_fill_viridis_d(option = "turbo")+
+  scale_y_continuous(labels = scales::percent_format(scale = 100)) +
+  scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
+  guides(alpha=F)+
+  labs(x="",y="EV \n Market \n Share",fill="Chemistry")
+
+f.fig.save("Figures/Battery/EV_Bench_Battery_SolidState.png")
+
+## regional
+# Create new rows duplicate based on NMC - with only half of share
+evVol_NMC <- evVol_region %>% filter(str_detect(chemistry,"NMC|NCA")) %>% 
+  mutate(chemistry=paste0("SS ",chemistry)) %>% 
+  left_join(share_difussion) %>% 
+  mutate(share_units=share_units*share_multiplier, share_multiplier=NULL)
+
+# add to original, but reduce to half
+evVol_NMC <- evVol_region %>% 
+  left_join(share_difussion) %>%
+  mutate(share_units=if_else(str_detect(chemistry,"NMC|NCA"),
+                             share_units*(1-share_multiplier),
+                             share_units),share_multiplier=NULL) %>% 
+  rbind(evVol_NMC) %>% 
+  group_by(Powertrain,Region,year) %>% mutate(share_units=share_units/sum(share_units))
+
+write.csv(evVol_NMC,"Results/Battery/Chemistry_Scenarios/SolidState_scen_region.csv",row.names = F)
+
+evVol_NMC %>% 
+  filter(Powertrain=="BEV") %>% 
+  filter(Region %in% c("United States","China","Brazil","European Union",
+                       "India","Japan")) %>%
+  ggplot(aes(year,share_units,fill=chemistry))+
+  geom_area()+
+  coord_cartesian(expand = F)+
+  facet_wrap(~Region)+
+  scale_fill_viridis_d(option = "turbo")+
+  scale_y_continuous(labels = scales::percent_format(scale = 100)) +
+  scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
+  guides(alpha=F)+
+  labs(x="",y="EV \n Market \n Share",fill="Chemistry")
+
+f.fig.save("Figures/Battery/EV_Bench_Battery_SolidStateRegion.png")
+
+## Sodium Batteries Adoption --------------
+# Half of LFP goes towards Sodium based battery
+# Electrolyte based on sodium: NaPF6
+# Cathode active material: NaCu(1/3)Fe(1/3)Mn(1/3)O2
+# Anode:	Hard Carbon
+
+# Start at 2030, reach half of share by 2040, then half for rest of period
+share_difussion <- tibble(year=2022:2050,
+                          share_multiplier=c(rep(0,7),
+                                             seq(0,1/2,length.out=12),
+                                             rep(0.5,10)))
+# Create new rows duplicate based on NMC - with only half of share
+evVol_NMC <- evVol %>% filter(str_detect(chemistry,"LFP")) %>% 
+  mutate(chemistry="SIB") %>% 
+  left_join(share_difussion) %>% 
+  mutate(share_units=share_units*share_multiplier, share_multiplier=NULL)
+
+# add to original, but reduce to half
+evVol_NMC <- evVol %>%
+  left_join(share_difussion) %>% 
+  mutate(share_units=if_else(str_detect(chemistry,"LFP"),
+                             share_units*(1-share_multiplier),
+                             share_units),share_multiplier=NULL) %>% 
+  rbind(evVol_NMC) %>% 
+  group_by(Powertrain,year) %>% mutate(share_units=share_units/sum(share_units))
+
+evVol_NMC %>% group_by(year) %>% reframe(sum(share_units))
+
+write.csv(evVol_NMC,"Results/Battery/Chemistry_Scenarios/Sodium_scen_world.csv",row.names = F)
+
+evVol_NMC %>% 
+  filter(Powertrain=="BEV") %>% 
+  ggplot(aes(year,share_units,fill=chemistry))+
+  geom_area()+
+  coord_cartesian(expand = F)+
+  scale_fill_viridis_d(option = "turbo")+
+  scale_y_continuous(labels = scales::percent_format(scale = 100)) +
+  scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
+  guides(alpha=F)+
+  labs(x="",y="EV \n Market \n Share",fill="Chemistry")
+
+f.fig.save("Figures/Battery/EV_Bench_Battery_Sodium.png")
+
+## regional
+# Create new rows duplicate based on NMC - with only half of share
+evVol_NMC <- evVol_region %>% filter(str_detect(chemistry,"LFP")) %>% 
+  mutate(chemistry="SIB") %>% 
+  left_join(share_difussion) %>% 
+  mutate(share_units=share_units*share_multiplier, share_multiplier=NULL)
+
+# add to original, but reduce to half
+evVol_NMC <- evVol_region %>% 
+  left_join(share_difussion) %>%
+  mutate(share_units=if_else(str_detect(chemistry,"LFP"),
+                             share_units*(1-share_multiplier),
+                             share_units),share_multiplier=NULL) %>% 
+  rbind(evVol_NMC) %>% 
+  group_by(Powertrain,Region,year) %>% mutate(share_units=share_units/sum(share_units))
+
+write.csv(evVol_NMC,"Results/Battery/Chemistry_Scenarios/Sodium_scen_region.csv",row.names = F)
+
+evVol_NMC %>% 
+  filter(Powertrain=="BEV") %>% 
+  filter(Region %in% c("United States","China","Brazil","European Union",
+                       "India","Japan")) %>%
+  ggplot(aes(year,share_units,fill=chemistry))+
+  geom_area()+
+  coord_cartesian(expand = F)+
+  facet_wrap(~Region)+
+  scale_fill_viridis_d(option = "turbo")+
+  scale_y_continuous(labels = scales::percent_format(scale = 100)) +
+  scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
+  guides(alpha=F)+
+  labs(x="",y="EV \n Market \n Share",fill="Chemistry")
+
+f.fig.save("Figures/Battery/EV_Bench_Battery_SodiumRegion.png")
+
+
 # EoF

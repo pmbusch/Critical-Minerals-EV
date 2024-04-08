@@ -36,33 +36,56 @@ case <- "Base"
 
 # load data
 # 2022 to 2026 and 5 mines use demand 0
-(demand <- read.csv("Parameters/Demand2.csv"))
-(deposit <- read.csv("Parameters/Deposit2.csv"))
+(demand <- read.csv("Parameters/Demand_Test1.csv"))
+(deposit <- read.csv("Parameters/Deposit_Test1.csv"))
+
+# demand <- read.csv("Parameters/Demand.csv")
+# deposit <- read.csv("Parameters/Deposit.csv")
+
+# demand <- demand %>% filter(Scenario=="Baseline-Baseline-Baseline")
 
 # debug faster
-demand <- demand[1:30,]
-deposit <- deposit[1:20,]
+# demand <- demand[1:10,]
+# deposit <- deposit[1:30,]
+
 
 (d_size <- nrow(deposit))
 (t_size <- nrow(demand))
 
 ## Parameters -----
-demand <- demand$Demand
-cost_extraction <- deposit$cost_extraction
-reserve <- deposit$reserve
-max_prod_rate <- deposit$max_prod_rate
-cost_expansion <- deposit$cost_expansion
-resource <- deposit$resource
-cost_opening <- deposit$cost_opening
-prod_rate <- deposit$prod_rate # starting capacity
-max_ramp_up <- max_prod_rate/4
+demand <- round(demand$Demand,0)
+cost_extraction <- round(deposit$cost_extraction/1e3,4)
+reserve <- round(deposit$reserve,0)
+max_prod_rate <- round(deposit$max_prod_rate,2)
+cost_expansion <- round(deposit$cost_expansion/1e3,4)
+resource <- round(deposit$resource,0)
+cost_opening <- round(deposit$cost_opening/1e3,4)
+prod_rate <- round(deposit$prod_rate,4) # starting capacity
+max_ramp_up <- round(deposit$max_ramp_up,2)
+
+
+## CORRECTION FOR NOW, MAX PROD RATE BGGER THAN CURRENT PROD
+max_prod_rate <- if_else(max_prod_rate>prod_rate,max_prod_rate,prod_rate)
+# cost_opening[,1]*prod_rate # cost 0 for all already opened mines
 
 # regarding big M - use threshold of maximum allowable cap for X
 # https://www.gurobi.com/documentation/current/refman/dealing_with_big_m_constra.html
 # https://orinanobworld.blogspot.com/2018/09/choosing-big-m-values.html
 # choose it as max prod rate of the whole sample of deposits, X will be limited by it nevertheless
 bigM_extract <- max(max_prod_rate)
-bigM_cost <- 1e3 # opportunity cost of not meeting demand?
+# Could be also time dependent, higher in later years to force the model to comply demand at first
+bigM_cost <- 1e6 # opportunity cost of not meeting demand?
+
+
+# grow reserves to 50% of resources by end of simulation
+# slope_reserve <- (resource/2-reserve)/t_size
+# slope_reserve <- ifelse(slope_reserve<0,0,slope_reserve)
+# slope_reserve <- outer(slope_reserve,0:(t_size-1))
+# reserve <- reserve+slope_reserve # is a matrix now
+
+# grow all reserves to resources 80% resources, for NOW
+reserve <- ifelse(reserve>resource*0.8,reserve,resource*0.8)
+
 
 # discount rate for Costs
 discount_rate <- 0.03 
@@ -72,10 +95,15 @@ cost_extraction <- outer(cost_extraction,1/discounter)
 cost_expansion <- outer(cost_expansion,1/discounter)
 cost_opening <- outer(cost_opening,1/discounter)
 
+# Factor 2-half of costs
+cost_factor <- 1.5 # increase price
 
-# cost_opening[1] <- 50000
-# demand[5] <- demand[5]+1 # for SP check
-# max_prod_rate[4] <- max_prod_rate[4]+1
+
+# Last solution as start point
+start <- read.csv(sprintf(url_file,case))
+
+
+# write.csv(slack,sprintf(url_file,paste0(case,"_slack"))
 
 
 ## Run Solver -----
@@ -95,7 +123,7 @@ result <- MIPModel()  %>%
   set_bounds(z[t], lb = 0,t=1:t_size) %>%
   # OBJECTIVE FUNCTION
   set_objective(sum_over(cost_extraction[d,t]*x[d,t] +
-                           1.01*cost_extraction[d,t]*x2[d,t] + # stepwise cost
+                           cost_factor*cost_extraction[d,t]*x2[d,t] + # stepwise cost
                            cost_expansion[d,t]*y[d,t] +
                            cost_opening[d,t]*w[d,t],d=1:d_size,t=1:t_size)+
                   sum_over(bigM_cost*z[t],t=1:t_size), "min")  %>% 
@@ -105,14 +133,15 @@ result <- MIPModel()  %>%
   add_constraint(sum_over(x[d,t]+x2[d,t],d=1:d_size)+z[t] >= demand[t],t=1:t_size) %>% # Meet demand
   # 50-50% for eachs stepwise cost
   add_constraint(sum_over(x[d,t],t=1:t_size) <= reserve[d]/2,d=1:d_size)  %>% # Reserves are not depleted
-  add_constraint(sum_over(x2[d,t],t=1:t_size) <= reserve[d]/2,d=1:d_size)  %>% 
+  add_constraint(sum_over(x2[d,t],t=1:t_size) <= reserve[d]/2,d=1:d_size)  %>%
   # add_constraint(sum_over(y[d,t1],t1=1:t)+prod_rate[d] <= max_prod_rate[d], d=1:d_size,t=1:t_size) %>% # max production rate
   # CHANGE TO REVIEW: ONLY ADD CAPACITY TO OPEN MINES
   add_constraint(sum_over(y[d,t1],t1=1:t)+prod_rate[d] <= sum_over(w[d,t1],t1=1:t)*max_prod_rate[d], d=1:d_size,t=1:t_size) %>% # max production rate
   add_constraint(sum_over(w[d,t],t=1:t_size) <= 1, d=1:d_size) %>% # open mine only once
   add_constraint(y[d,t] <= max_ramp_up[d], d=1:d_size,t=1:t_size) %>% # ramp limit
   # SOLVER
-  solve_model(with_ROI(solver = "gurobi",verbose=T))
+  solve_model(with_ROI(solver = "gurobi",verbose=T,
+                       MIPGap=0.001)) # MIPGap to run faster
 end_time <- proc.time() # Capture the ending time
 print(end_time - start_time) # 0.08seg for 5x5 problem, 4 seg for 30.8, 58 seg for 30x104, 3min for 60x104 (full problem)
 
@@ -145,42 +174,17 @@ df_results <- df_results %>%
 write.csv(df_results,sprintf(url_file,case),row.names = F)
 write.csv(slack,sprintf(url_file,paste0(case,"_slack")),row.names = F)
 
-## Sniff Test ----
-result$objective_value
-
 # Parameter for LP model
 openings <- get_solution(result, w[d,t]) %>% dplyr::select(-variable) %>% 
   pivot_wider(names_from = c(t), values_from = value) %>% mutate(d=NULL) %>% 
   as.matrix()
-
-# NO mine opened twice
-df_results %>%  group_by(d) %>% 
-  reframe(x=sum(mine_opened)) %>% pull(x) %>% range()
-# Number of mines opened
-sum(df_results$mine_opened)
-
-# Production at last period vs demand. Note there is existing capacity
-sum(df_results$capacity_added)+sum(prod_rate)
-demand[t_size]
-# total extraction vs reserves
-sum(df_results$tons_extracted)
-sum(df_results$tons_extracted1);sum(df_results$tons_extracted2);
-sum(deposit$reserve)
-# No production or extraction at unopened mines
-closed_d <- df_results %>% group_by(d) %>% 
-  reframe(x=sum(mine_opened)) %>% filter(x==0) %>% pull(d)
-df_results %>% filter(d %in% closed_d) %>% 
-  reframe(tons_extracted=sum(tons_extracted),
-          capacity_added=sum(capacity_added))
-# max production rate achieved vs limit
-df_results %>% reframe(x=max(cap_total));bigM_extract;
-
 
 ## Shadow Prices -----
 # row duals are only available for solve glpk: https://github.com/dirkschumacher/ompr/issues/36
 # solution: run GLPK LP model with mine open as parameter
 
 # LP model version
+start_time <- proc.time()
 result_LP <- MIPModel()  %>% 
   # DECISION VARIABLES
   add_variable(x[d,t], type = "continuous", lb = 0,d=1:d_size,t=1:t_size)  %>% # Extraction
@@ -194,7 +198,7 @@ result_LP <- MIPModel()  %>%
   set_bounds(z[t], lb = 0,t=1:t_size) %>%
   # OBJECTIVE FUNCTION
   set_objective(sum_over(cost_extraction[d,t]*x[d,t] +
-                           1.01*cost_extraction[d,t]*x2[d,t] + # stepwise cost
+                           cost_factor*cost_extraction[d,t]*x2[d,t] + # stepwise cost
                            cost_expansion[d,t]*y[d,t],d=1:d_size,t=1:t_size)+
                   sum_over(bigM_cost*z[t],t=1:t_size), "min")  %>% 
   # CONSTRAINT
@@ -210,32 +214,8 @@ result_LP <- MIPModel()  %>%
   add_constraint(y[d,t] <= max_ramp_up[d], d=1:d_size,t=1:t_size) %>% # ramp limit
   # SOLVER
   solve_model(with_ROI(solver = "glpk",verbose=T))
-
-
-# compare MIP (gurobi) solution against LP (glpk)
-result$objective_value
-# a=sum(matrix(get_solution(result, x[d,t])$value,nrow=d_size,byrow = F)*cost_extraction)
-# b=sum(matrix(get_solution(result, y[d,t])$value,nrow=d_size,byrow = F)*cost_expansion)
-# c=sum(matrix(get_solution(result, w[d,t])$value,nrow=d_size,byrow = F)*cost_opening)
-# d=sum(get_solution(result, z[t])$value)*bigM_cost
-# a+b+c+d
-
-result_LP$objective_value+sum(cost_opening*openings)
-# a1=sum(matrix(get_solution(result_LP, x[d,t])$value,nrow=d_size,byrow = F)*cost_extraction)
-# b1=sum(matrix(get_solution(result_LP, y[d,t])$value,nrow=d_size,byrow = F)*cost_expansion)
-# c1=sum(openings*cost_opening)
-# d1=sum(get_solution(result_LP, z[t])$value)*bigM_cost
-# a1+b1+c1+d1
-
-get_solution(result, x[d,t])$value %>% sum()
-get_solution(result_LP, x[d,t])$value %>% sum()
-get_solution(result, y[d,t])$value %>% sum()
-get_solution(result_LP, y[d,t])$value %>% sum()
-
-get_solution(result, x[d,t]) %>% rename(value_orig=value) %>% 
-  left_join(get_solution(result_LP, x[d,t])) # EQUAL
-get_solution(result, y[d,t]) %>% rename(value_orig=value) %>% 
-  left_join(get_solution(result_LP, y[d,t])) # EQUAL
+end_time <- proc.time() 
+print(end_time - start_time) 
 
 
 # vector for all the shadow prices for constraints, in order
@@ -271,100 +251,22 @@ sp_rest <- expand.grid(d=1:d_size,year=2022:(2021+t_size)) %>% arrange(d) %>%
 
 write.csv(sp_rest,sprintf(url_file,paste0(case,"_SP_capacity")),row.names = F)
 
+# Report Markdown ---------
 
-## Figures -------------
+# Figures are in report
 theme_set(theme_bw(16)+ theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.title.y=element_text(angle=0,margin=margin(r=0))))
 fig_name <- "Figures/Optimization/%s.png"
+save_figures <- F # change to T or F
 
-## cumulative demand
+rmarkdown::render("Scripts/Optimization/Run_Report.Rmd",
+                  output_file = "Report.pdf")
+
+
 get_solution(result,x[d,t]) %>% group_by(d) %>% reframe(value=sum(value)) %>% head()
 df_results %>% group_by(d) %>% reframe(x=sum(tons_extracted)) %>% head()
 head(deposit)
 
-# Production over time
-df_results %>% 
-  filter(t<2051) %>% 
-  # mutate(d=factor(d)) %>% 
-  ggplot(aes(t,tons_extracted,fill=d,group=d))+
-  geom_area()+
-  coord_cartesian(expand = F)+
-  labs(x="",y="Production")+
-  theme(legend.position = "none",
-        axis.text.x = element_text(hjust=1))
-f.fig.save(sprintf(fig_name,"production"))
-
-# Open Mines over time
-df_results %>% 
-  filter(t<2051) %>%
-  rename(value=mine_opened) %>% 
-  mutate(value=factor(value)) %>% 
-  ggplot(aes(t,d,fill=value))+
-  geom_tile()+
-  coord_cartesian(expand = F)+
-  scale_y_continuous(breaks = NULL)+
-  scale_fill_manual(values = c("0" = "white", "1" = "red"))+
-  labs(x="",y="Deposit",fill="")+
-  theme(legend.position = "none")
-f.fig.save(sprintf(fig_name,"minesOpen"))
-
-# Capacity over time
-max_cap_openMines <- df_results %>% 
-  left_join(deposit) %>% mutate(max_prod=mine_open*max_prod_rate) %>% 
-  filter(t<2051) %>% group_by(t) %>% reframe(max_prod=sum(max_prod))
-
-df_results %>% 
-  filter(t<2051) %>% 
-  ggplot(aes(t,cap_total))+
-  geom_area(aes(fill=d,group=d))+
-  geom_line(data=max_cap_openMines,aes(y=max_prod),linewidth=1,col="red")+
-  coord_cartesian(expand = F)+
-  labs(x="",y="Production \n Capacity")+
-  theme(legend.position = "none",
-        axis.text.x = element_text(hjust=1))
-f.fig.save(sprintf(fig_name,"prodCapacity"))
-
-# Shadow prices
-
-# demand marginal costs
-sp_demand %>% 
-  filter(t<2051) %>% 
-  ggplot(aes(t,sp_demand))+
-  geom_line()+
-  labs(x="",y="Shadow Price \n Demand")
-f.fig.save(sprintf(fig_name,"SP_demand"))
-
-# note: all should be negative to make sense
-sp_rest %>% reframe(sp_maxProdRate=max(sp_maxProdRate),
-                    sp_rampUp=max(sp_rampUp),
-                    sp_capacity=max(sp_capacity))
-
-# reserve hits
-sp_reserve %>% 
-  filter(sp_reserve!=0) %>% # remove zeros
-  ggplot(aes(reorder(d,sp_reserve),sp_reserve))+
-  geom_col()+
-  coord_flip()+
-  scale_x_discrete(breaks = NULL)+
-  labs(x="Deposit",y="Shadow Price Reserves")
-f.fig.save(sprintf(fig_name,"SP_reserve"))
-
-# ORDER IS KEY TO GET CORRECT SHADOW PRICES FROM THE MATRIX/VECTOR
-p1 <- sp_rest %>% 
-  filter(year<2051) %>% 
-  ggplot(aes(year,d,fill=sp_maxProdRate))+
-  geom_tile()+
-  coord_cartesian(expand = F)+
-  scale_fill_gradientn(colors = c("red", "white"))+
-  scale_y_continuous(breaks = NULL)+
-  labs(x="",y="Deposit",fill="Shadow Price \nMax prod. rate")
-# why positive in some cases? Why having more capacity in a mine increases my costs?
-p1
-f.fig.save(sprintf(fig_name,"SP_MaxProdRate"))
-p1+aes(fill=sp_capacity)+labs(fill="Shadow Price \nCapacity")
-f.fig.save(sprintf(fig_name,"SP_Capacity"))
-p1+aes(fill=sp_rampUp)+labs(fill="Shadow Price \nRamp up")
-f.fig.save(sprintf(fig_name,"SP_RampUp"))
-# p1+aes(fill=sp_openMine)+labs(fill="Shadow Price \nOpen mine")
+## cumulative demand
 
 
 

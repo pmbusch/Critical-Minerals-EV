@@ -16,66 +16,33 @@ names(icct) <- names(icct) %>% str_replace_all(" ","_") %>%  # correct names
   str_remove_all("\\(|\\)") %>% str_remove("_group") %>% 
   str_replace("CY","Year")
 
-eq_country_region <- icct %>% group_by(Region,Country) %>% tally() %>% mutate(n=NULL)
-
-
 ## Battery size -----
-# for LDV by country 
-bat <- read.csv("Results/Battery/battery_size_country.csv")
-# By region
-bat_region <- read.csv("Results/Battery/battery_size_region.csv")
-bat_region <- bat_region %>% filter(Year==2022)
-bat$Vehicle <- "Car";bat_region$Vehicle <- "Car";
-
-
-# Battery for other on-road transport 
-bat_others <- read_excel("Data/Battery_Size.xlsx",sheet = "Battery_Size")
-
-
-# share of 2-3 wheelers
-share_2_3_wheelers <- read_excel("Data/Disaggregated 2-3 wheeler sales.xlsx",
-                                 sheet="2_3_WheelerShare",range = "A27:D31")
-
-bat_wheelers <- bat_others %>% filter(str_detect(Vehicle,"wheeler"))
-bat_others <- bat_others %>% filter(!str_detect(Vehicle,"wheeler"))
-
-bat_wheelers <- share_2_3_wheelers %>% 
-  dplyr::select(Country,Share_2Wheeler) %>% mutate(Year=2022) %>% 
-  left_join(bat_wheelers)
-bat_wheelers <- bat_wheelers %>% pivot_wider(names_from = Vehicle, values_from = kwh_veh) %>% 
-  mutate(kwh_veh=`2 wheeler`*Share_2Wheeler+`3 wheeler`*(1-Share_2Wheeler))
-bat_wheelers$Share_2Wheeler <- bat_wheelers$`2 wheeler` <- bat_wheelers$`3 wheeler` <- NULL
-
-countries_wheelers <- bat_wheelers %>% filter(Country!="World") %>% pull(Country) %>% unique()
-
-bat_wheelers$Vehicle <- "Two/Three Wheelers"
-bat_others$Country <- "World"
-
-bat_others <- rbind(bat_others,bat_wheelers)
-rm(share_2_3_wheelers,bat_wheelers)
-
-## Transport chemistry share ------------
-
-# Use regional chemistry share forecasts, BY 3 scenarios
-chem <- read.csv("Results/Battery/Chemistry_Scenarios/bat_share_2050_region.csv")
-chem$chem_scenario <- "Baseline"
-chem_LFP <- read.csv("Results/Battery/Chemistry_Scenarios/LFP_scen_region.csv")
-chem_LFP$chem_scenario <- "Double LFP"
-chem_NMC <- read.csv("Results/Battery/Chemistry_Scenarios/NMC811_scen_region.csv")
-chem_NMC$chem_scenario <- "Double NMC 811"
-chem <- rbind(chem,chem_LFP,chem_NMC);rm(chem_LFP,chem_NMC)
-chem <- chem %>% rename(Year=year)
+bat_ldv <- read.csv("Results/Intermediate Results/bat_size_chem_ldv.csv")
+bat_rest <- read.csv("Results/Intermediate Results/bat_size_chem_rest.csv")
 
 ## Battery for stationary power storage -----
 stationary <- read.csv("Results/stationaryPower.csv")
 stationary <- stationary %>% rename(Country=ICCT_Country,Region=ICCT_Region)
 stationary$Vehicle <- "Stationary Power Storage"
+stationary_orig <- stationary
+
+# Sodium for SSPS
+stationary_SIB <- read.csv("Results/Sodium_stationaryPower.csv")
+stationary_SIB <- stationary_SIB %>% rename(Country=ICCT_Country,Region=ICCT_Region)
+stationary_SIB$Vehicle <- "Stationary Power Storage"
+
 
 ## Mineral intensity -----
 mineral <- read_excel("Data/Mineral_Intensity.xlsx",sheet = "BatPac")
 
 ## Reuse statistics from Survival Model -----
-reuse <- read.csv("Data/Survival Curves/world_outflows_LIB.csv")
+reuse <- read.csv("Results/Intermediate Results/world_outflows_LIB.csv",
+                  stringsAsFactors = FALSE)
+# Convert strings to vectors by year - Process the list column back into a list
+reuse <- reuse %>%
+  mutate(LIB_recycling_vector = str_split(LIB_recycling_vector,"\\|") %>% lapply(as.numeric),
+         LIB_SSPS_vector = str_split(LIB_SSPS_vector,"\\|") %>% lapply(as.numeric),
+         add_LIB_vector = str_split(add_LIB_vector,"\\|") %>% lapply(as.numeric))
 
 ## Other sector demand -----
 otherSectors <- read.csv("Results/Intermediate Results/otherSector_demand.csv")
@@ -85,194 +52,335 @@ otherSectors <- read.csv("Results/Intermediate Results/otherSector_demand.csv")
 # JOIN DATA  ---------
 ####################
 
-df <- icct %>% 
-  filter(Powertrain!="ICE")
-  # filter(Scenario=="Baseline")
+# convert vector of age with reference year to vector of years 
+# Define a custom function to calculate Y for each row
+# Function simply moves with the vector indexing
+# Reference year is always 2022, and the length is up to 2050 (29 of size)
+shift_X <- function(starting_year, x) {
+  shift <- starting_year-2022+1
+  x=x/sum(x) # do relative terms for flows inside X
+  y = x[shift:1]
+  y[1] <- y[1]+sum(x[-(1:shift)])
+  if (shift<29){
+    y[(shift+1):29] <- 0
+  }
+  return(y) # vector from 2022 to 2050
+}
 
 
-## Add Battery size and chemistry ----------
+# Do Loop for all demand scenarios - to make sure calculation are correct
+# Bad part more data storage and calculations needed, but could be worth it
 
-df_ldv <- df %>% filter(Vehicle=="Car")
+scen_level
+chems_scen <- c("Baseline","Double LFP","Double NMC 811",
+                "Solid State adoption","Sodium Battery adoption")
+capacity_scen <- c("Baseline","Low Range","High Range")
 
-# For LDV
-# merge size and chem
-bat <- bat %>% 
-  mutate(Year=NULL) %>% # for all years use the same battery size (FOR NOW)
-  left_join(eq_country_region) %>% # add region
-  left_join(chem) %>% mutate(kwh_veh=kwh_veh_total*share_units)
-# Join by country name
-df_ldv <- df_ldv %>% left_join(bat)
+# results
+df_region_final <- c()
+start_time <- proc.time()
+for (scen in scen_level){
+  cat("Scenario ICCT: ",scen,"\n")
+  for (scen_chem in chems_scen){
+    cat("  Chemistry Scenario: ",scen_chem,"\n")
+    for (scen_bat in capacity_scen){
+      
+      df <- icct %>% 
+        filter(Powertrain!="ICE") %>% 
+        filter(Scenario==scen)
+      df$Scenario <- NULL
+        
+      ## Add Battery size and chemistry ----------
+      
+      # Sodium scenario for stationary
+      stationary <- if (str_detect(scen_chem,"Sodium")) stationary_SIB else stationary_orig
+      
+      bat_ldv_loop <- bat_ldv %>% 
+        filter(chem_scenario==scen_chem) %>% 
+        filter(capacity_scenario==scen_bat) %>% 
+        mutate(chem_scenario=NULL,capacity_scenario=NULL)
+      
+      # LDV
+      df_ldv <- df %>% filter(Vehicle=="Car") %>% 
+        left_join(bat_ldv_loop)
+      # REST
+      df_rest <- df %>% filter(Vehicle!="Car") %>% 
+        left_join(bat_rest)
+      
+      # Join them
+      df <- rbind(df_ldv,df_rest); rm(df_ldv,df_rest);
+      
+      ## Failure batteries additional for replacement -----
+      # Outflow to SSPS and Recycling as well
+      
+      # Add new requirement of batteries by sector
+      # For now: ONLY BEV considered
+      
+      # Summarise kwh_veh through years as vectors
+      bat_ldv_loop$Year %>% range()
+      # count of all years - complete?
+      bat_ldv_loop %>% filter(Powertrain=="BEV") %>% group_by(Country,chemistry) %>% 
+        tally() %>% pull(n) %>% range()
+      
+  
+      bat_ldv_chem <- bat_ldv_loop %>% filter(Powertrain=="BEV") %>% 
+        arrange(Year) %>% 
+        group_by(Country,chemistry) %>%
+        summarise(kwh_veh = list(kwh_veh)) %>% ungroup()
+      
+      # bat_ldv_chem %>% mutate(lenght=length(kwh_veh[[1]])) %>% pull(lenght) %>% unique() # 29 all of them
+      # bat_ldv_chem[9:11,]
+      
+      # the column kwh_chem contains the battery size for each year as a vector, from 2022 to 2050
+      # bat_ldv_chem %>% filter(Country=="United States",
+      #                         chemistry=="LFP") %>% pull(kwh_veh) # LFP increases in this scenario
+      # 
+      
+      # DO THE SAME for reuse cars data.frame, but move vector of age to vector of years
+      # Only cars have moving chemistry and size for now
+      reuse_car <- reuse %>% filter(Vehicle=="Car") %>% 
+        filter(Scenario==scen) %>% 
+        dplyr::select(Year,
+                      perc_add_lib,add_LIB_vector,
+                      perc_lib_ssps,LIB_SSPS_vector,
+                      perc_lib_recycling,LIB_recycling_vector)
+      # head(reuse_car) # some columns are vectors with the flow of EVs from age 1 to 30
+      
+      # do it directly with the function
+      reuse_car <- reuse_car %>% 
+        rowwise() %>%
+        mutate(add_LIB_vector = list(shift_X(Year, add_LIB_vector))) %>% 
+        mutate(LIB_recycling_vector = list(shift_X(Year, LIB_recycling_vector))) %>% 
+        mutate(LIB_SSPS_vector = list(shift_X(Year, LIB_SSPS_vector))) %>% 
+        ungroup()
+      
+      # join them and multiply them as vectors
+      # VECTOR of Bat size x Vector of Replacement needs through years
+      # THIS GIVES ME THE DESIRED KWH_VEH for each chemistry based on the past shares!!!
+      bat_ldv_chem <- bat_ldv_chem %>% 
+        mutate(join_dummy=1) %>% # to join expanding both dataframes
+        # head() %>% 
+        left_join(mutate(reuse_car,join_dummy=1),
+                  relationship = "many-to-many") %>% 
+        rowwise() %>% # MULTIPLY VECTORS rowise
+        mutate(add_kwh_failure = sum(kwh_veh * add_LIB_vector),
+               kwh_veh_recycling = sum(kwh_veh * LIB_recycling_vector),
+               lib_kwh_ssps = sum(kwh_veh * LIB_SSPS_vector)) %>% 
+        ungroup() %>% 
+        mutate(add_kwh_failure = add_kwh_failure*perc_add_lib,
+               kwh_veh_recycling = kwh_veh_recycling*perc_lib_recycling,
+               lib_kwh_ssps = lib_kwh_ssps*perc_lib_ssps) %>% 
+        dplyr::select(-kwh_veh,-LIB_recycling_vector,-LIB_SSPS_vector,-join_dummy,
+                      -add_LIB_vector)
+      
+      # gives the kwh_veh using total sales for that country
+      head(bat_ldv_chem)
+      
+      # total LIB outflow only BEV cars
+      df_car <- df %>% filter(Vehicle=="Car",Powertrain=="BEV")
+      lib_outflow_car <- df_car %>% left_join(bat_ldv_chem)
+      lib_outflow_car <- lib_outflow_car %>% 
+        mutate(lib_additional_kwh=add_kwh_failure*Sales,
+               lib_recycling_kwh=kwh_veh_recycling*Sales,
+               lib_ssps_kwh=lib_kwh_ssps*Sales) %>% 
+        dplyr::select(-kwh_veh_recycling,-lib_kwh_ssps,-perc_lib_ssps,-perc_lib_recycling,
+                      -perc_add_lib,-add_kwh_failure)
+      
+      # rest of vehicles: same size and chemistry during whole period
+      reuse_aux <- reuse %>%  filter(Scenario==scen) %>% mutate(Scenario=NULL)
+      lib_outflow <- df %>% 
+        filter(Vehicle!="Car",Powertrain=="BEV") %>% 
+        left_join(dplyr::select(reuse_aux,-Sales))
+      # unique(lib_outflow$Powertrain);unique(lib_outflow$Vehicle);
+      # sum(is.na(lib_outflow$perc_lib_ssps))
+      lib_outflow <- lib_outflow %>% 
+        mutate(lib_additional_kwh=Sales*perc_add_lib*kwh_veh,
+               lib_ssps_kwh=Sales*perc_lib_ssps*kwh_veh,
+               lib_recycling_kwh=Sales*perc_lib_recycling*kwh_veh) %>% 
+        group_by(Region,Country,Year,chemistry) %>% 
+        summarise(lib_additional_kwh=sum(lib_additional_kwh),
+                  lib_ssps_kwh=sum(lib_ssps_kwh),
+                  lib_recycling_kwh=sum(lib_recycling_kwh)) %>% ungroup()
+      
+      # join to cars lib_outflow
+      lib_outflow_car$Powertrain <- lib_outflow_car$Vehicle <- NULL
+      lib_outflow_car$Sales <- lib_outflow_car$kwh_veh <- NULL
+      
+      lib_outflow <- rbind(lib_outflow,lib_outflow_car) %>% 
+        group_by(Region,Country,Year,chemistry) %>% 
+        summarise(lib_additional_kwh=sum(lib_additional_kwh),
+                  lib_ssps_kwh=sum(lib_ssps_kwh),
+                  lib_recycling_kwh=sum(lib_recycling_kwh)) %>% ungroup()
+      rm(lib_outflow_car)
+      
+      ## kWH ----
+      df <- df %>% 
+        mutate(kwh_required=Sales*kwh_veh)
+      
+      ## add additional LIB kWh demand towards main Dataframe
+      df_addLib <- lib_outflow %>% 
+        rename(kwh_required=lib_additional_kwh) %>% 
+        mutate(Powertrain="BEV",
+               kwh_veh=0,Sales=0, # dummy
+               Vehicle="Additional LIB") %>%  # additional new LIB required
+        dplyr::select(-lib_ssps_kwh,-lib_recycling_kwh)
+      
+      df <- rbind(df,df_addLib)
+      rm(df_addLib)
+      
+      
+      ## Stationary power storage -----
+      stationary_loop <- stationary %>% 
+        rename(kwh_required=stationaryPower) %>% # in Mwh 
+        mutate(kwh_required=kwh_required*1e3)
+      # sum(stationary_loop$kwh_required)/1e9 # 16
+      
+      # reduce demand by using LIB outflow
+      # reduce total demand of stationary, not by chemistry
+      # save shares of chem and total
+      stationary_shares <- stationary_loop %>% group_by(Country,Vehicle,Region,Year) %>% 
+        mutate(share_chem=kwh_required/sum(kwh_required),
+               kwh_required=NULL) %>% ungroup()
+      stationary_total <- stationary_loop %>% group_by(Country,Vehicle,Region,Year) %>% 
+        reframe(kwh_required=sum(kwh_required)) %>% ungroup()
+      lib_outflow_ssps_total <- lib_outflow %>% 
+        group_by(Region,Country,Year) %>% 
+        reframe(lib_ssps_kwh=sum(lib_ssps_kwh)) %>% ungroup()
+      
+      # substract total
+      stationary_total <- stationary_total %>% left_join(lib_outflow_ssps_total) %>% 
+        mutate(lib_ssps_kwh=lib_ssps_kwh*statHealth_SPSS) %>%  # 70% of remanining nomimal capacity
+        mutate(allocate=pmin(kwh_required,lib_ssps_kwh)) %>%  # substract only to 0 max
+        mutate(kwh_required=kwh_required-allocate,
+               lib_ssps_kwh=lib_ssps_kwh-allocate)
+      
+      # chem scenario and other scenario are derived through the cars outflow
+      # re add chem shares to remaining flows
+      stationary_loop <- stationary_shares %>% 
+        left_join(dplyr::select(stationary_total,-lib_ssps_kwh,-allocate)) %>% 
+        mutate(kwh_required=kwh_required*share_chem,
+               share_chem=NULL)
+      # sum(stationary_loop$kwh_required)/1e9 # 11, less than before
+      
+      
+      # update lib outflow, other ssps goes to recycling
+      stationary_total$Vehicle <- stationary_total$kwh_required <- stationary_total$lib_ssps_kwh <- NULL
+      lib_recycling <- lib_outflow %>% 
+        group_by(Region,Country,Year) %>% 
+        mutate(share_chem=lib_ssps_kwh/sum(lib_ssps_kwh)) %>% ungroup() %>% 
+        left_join(stationary_total) %>% 
+        mutate(allocate = if_else(is.na(allocate), 0, allocate),
+               allocate=allocate*share_chem,
+               lib_ssps_kwh=lib_ssps_kwh-allocate,
+               lib_ssps_kwh=lib_ssps_kwh/statHealth_SPSS) %>% # re-convert to nominal capacity for recycling
+        mutate(lib_recycling_kwh=lib_recycling_kwh+lib_ssps_kwh) %>% 
+        dplyr::select(-lib_ssps_kwh,-share_chem,-allocate,-lib_additional_kwh)
+      
+      rm(stationary_shares,stationary_total,lib_outflow_ssps_total)
+      
+      # add dummies to join
+      stationary_loop <- stationary_loop %>% 
+        mutate(Powertrain="SPS",
+               Sales=0,kwh_veh=0) 
+      
+      df <- rbind(df,stationary_loop) # 1 M rows for now
+      
+      
+      ## Add Mineral Intensity --------
+      
+      df <- df %>% filter(kwh_required>0) 
+      
+      # use same chemistry for now
+      df$chemistry %>% unique()
+      # df %>% group_by(chemistry) %>% summarise(x=sum(kwh_required)) %>% arrange(x)
+      # mineral$chemistry %>% unique()
+      
+      mineral <- mineral %>% filter(Mineral %in% min_interest3) #include P and Mn
+      
+      df <- df %>% left_join(mineral)
+      # nrow(df)/1e6 # 4.9 MILLION
+      
+      ####################
+      # CALCULATIONS ---------
+      ####################
+      
+      ## Minerals ----
+      df <- df %>% mutate(tons_mineral=kwh_required*kg_per_kwh/1e3)
+      
+      # Substract due to recycling - remaining SSPS goes to recycling as well
+      lib_recycling <- lib_recycling %>% 
+        mutate(Year=Year+delay_recycling_year) %>% filter(Year<2051) %>% 
+        left_join(mineral) %>% 
+        rename(kwh_required=lib_recycling_kwh) %>% 
+        mutate(tons_mineral=-kwh_required*kg_per_kwh/1e3*mat_recovery_recycling,
+               Vehicle="Recycling")
+      # BETTER TO DO IT AS ADDITIONAL VEHICLE: Scenario, and negative
+      
+      # Cathode scrap
+      # consider scrap, and also that scrap could go towards recycling with recovery rate %
+      df <- df %>% mutate(tons_mineral=tons_mineral/(1-cathode_scrap)) 
+      df_scrap <- df %>% 
+        mutate(tons_scrap=tons_mineral*cathode_scrap*mat_recovery_recycling, #% recov. rate
+               Year=Year+delay_recycling_year) %>%  # delay in rec
+        group_by(Region,Country,Year,chemistry,Mineral) %>% 
+        reframe(tons_scrap=sum(tons_scrap,na.rm=T)) %>% ungroup()
+      
+      # join to recycling 
+      lib_recycling <- lib_recycling %>% 
+        left_join(df_scrap) %>%
+        mutate(tons_scrap=if_else(is.na(tons_scrap),0,tons_scrap)) %>% 
+        mutate(tons_mineral=tons_mineral-tons_scrap,tons_scrap=NULL)
+      rm(df_scrap)
+      
+      # join recycling
+      names(df)
+      names(lib_recycling)
+      lib_recycling$kwh_veh <- lib_recycling$Sales <- 0
+      lib_recycling$Powertrain <- "Recycling"
+      
+      df <- rbind(df,lib_recycling)
+      ## Add Other sector demand -------- 
+      names(df)
+      names(otherSectors)
+      
+      # add region
+      region_dict <- df %>% group_by(Region,Country) %>% tally() %>% mutate(n=NULL)
+      otherSectors_loop <- otherSectors %>% left_join(region_dict) %>% 
+        mutate(chemistry="Other Sectors",
+               Vehicle="Other Sectors",kwh_veh=0,kwh_required=0,kg_per_kwh=0,Sales=0)
+      rm(region_dict)
+      df <- rbind(df,otherSectors_loop)
+      
+    # Save results at Region level
+    names(df)
+    df_region <- df %>% 
+      group_by(Year,Region,Powertrain,Vehicle,chemistry,Mineral) %>% 
+      reframe(tons_mineral=sum(tons_mineral)) %>% ungroup()
+    nrow(df_region) # 516K records
+    
+    # add scenarios
+    df_region$Scenario <- scen
+    df_region$chem_scenario <- scen_chem  
+    df_region$capacity_scenario <- scen_bat
+    
+    # to speed processing, remove 0
+    df_region <- df_region %>% filter(abs(tons_mineral)>0)
+    
+    df_region_final <- rbind(df_region_final,df_region)
+    
+    rm(df_region)
+    
+    }
+  }
+}
+rm(scen,scen_chem,scen_bat)
+end_time <- proc.time() # Capture the ending time
+print(end_time - start_time) # for 9 loops: 1 minute, 6 segs each
 
-# get NA terms to join them by region
-df_ldv_na <- df_ldv %>% filter(is.na(kwh_veh)) %>% dplyr::select(-chemistry,-MWh,-unit,-share_units,-kwh_veh,-kwh_veh_total,-chem_scenario)
-bat_region <- bat_region %>% mutate(Year=NULL) %>% left_join(chem) %>% 
-  mutate(kwh_veh=kwh_veh_total*share_units)
-df_ldv <- df_ldv %>% filter(!is.na(kwh_veh)) # to join later
-# add the regional estimates
-df_ldv_na <- df_ldv_na %>% left_join(bat_region)
-# NO MISSING no
-df_ldv <- rbind(df_ldv,df_ldv_na); rm(df_ldv_na);
-# Check
-length(unique(df_ldv$Country))*length(unique(df_ldv$Powertrain)) # 187 * 2 = 374
-df_ldv$MWh <- df_ldv$unit <- df_ldv$share_units <- df_ldv$kwh_veh_total <- NULL  
-
-
-# other vehicles
-bat_others$Year <- NULL # for all years use the same battery
-df_rest <- df %>% filter(Vehicle!="Car")
-df_rest <- df_rest %>% 
-  mutate(country_bat=if_else(Vehicle=="Two/Three Wheelers" & # add country to join to world or others
-                             Country %in% countries_wheelers,Country,"World"))
-bat_others <- bat_others %>% rename(country_bat=Country)
-df_rest <- df_rest %>% left_join(bat_others)
-df_rest$country_bat <- NULL
-rm(countries_wheelers)
-
-# no chem scenario for rest - FOR NOW
-# DELETE 
-# s1 <- s2 <- s3 <- df_rest;
-# s1$chem_scenario="Baseline";s2$chem_scenario="Double LFP";s3$chem_scenario="Double NMC 811";
-# df_rest <- rbind(s1,s2,s3);rm(s1,s2,s3)
-##
-df_rest$chem_scenario <- "No Scenario"
-
-# Join them
-df <- rbind(df_ldv,df_rest); rm(df_ldv,df_rest);
-
-## add need for additional batteries due to failures-----
-
-# get battery flow for SSPS and recycling
-lib_outflow <- df %>% left_join(reuse) %>% 
-  filter(!is.na(perc_lib_ssps)) %>% 
-  # Note: kwh_veh is stacked (shares) for the whole battery size
-  mutate(lib_ssps_kwh=Sales*perc_lib_ssps*kwh_veh,
-         lib_recycling_kwh=Sales*perc_lib_recycling*kwh_veh) %>% 
-  group_by(Region,Country,Year,chemistry,Scenario,chem_scenario) %>% 
-  summarise(lib_ssps_kwh=sum(lib_ssps_kwh),
-            lib_recycling_kwh=sum(lib_recycling_kwh)) %>% ungroup()
-
-df_addLib <- df %>% 
-  left_join(dplyr::select(reuse,Year,Scenario,Vehicle,Powertrain,perc_add_lib)) %>% 
-  filter(!is.na(perc_add_lib)) %>% 
-  mutate(Sales=Sales*perc_add_lib,
-         Vehicle="Additional LIB") %>%  # additional new LIB required
-  dplyr::select(-perc_add_lib)
-
-df <- rbind(df,df_addLib)
-
-## kWH ----
-df <- df %>% 
-  mutate(kwh_required=Sales*kwh_veh)
-
-# Add stationary power storage
-stationary <- stationary %>% 
-  rename(kwh_required=stationaryPower) %>% # in Mwh 
-  mutate(kwh_required=kwh_required*1e3)
-
-# reduce demand by using LIB outflow
-stationary <- stationary %>% left_join(lib_outflow) %>% 
-  mutate(lib_ssps_kwh = if_else(is.na(lib_ssps_kwh), 0, lib_ssps_kwh),
-         lib_recycling_kwh = if_else(is.na(lib_recycling_kwh), 0, lib_recycling_kwh)) %>% 
-  mutate(allocate=pmin(kwh_required,lib_ssps_kwh)) %>%  # substract only to 0 max
-  mutate(kwh_required=kwh_required-allocate,
-         lib_ssps_kwh=lib_ssps_kwh-allocate)
-
-# for NAs add scenarios - SCENARIO REQUIRED DUE TO LIB FLOW TO SSPS
-stationary_na <- stationary %>% filter(is.na(Scenario))
-stationary <- stationary %>% filter(!is.na(Scenario))
-stationary_na <- stationary_na %>% dplyr::select(-Scenario,-chem_scenario)
-s1 <- s2 <- s3 <- stationary_na;
-s1$Scenario="Baseline";s2$Scenario="Momentum";s3$Scenario="Ambitious";
-stationary_na <- rbind(s1,s2,s3);rm(s1,s2,s3)
-# No chem scenario for SPS
-s1 <- s2 <- s3 <- stationary_na;
-s1$chem_scenario="Baseline";s2$chem_scenario="Double LFP";s3$chem_scenario="Double NMC 811";
-stationary_na <- rbind(s1,s2,s3);rm(s1,s2,s3)
-stationary <- rbind(stationary,stationary_na)
-rm(stationary_na)
-
-# update lib outflow, other ssps goes to recycling
-lib_outflow <- lib_outflow %>% 
-  left_join(dplyr::select(stationary,Region,Country,Year,chemistry,Scenario,chem_scenario,
-                          allocate)) %>% 
-  mutate(allocate = if_else(is.na(allocate), 0, allocate),
-         lib_ssps_kwh=lib_ssps_kwh-allocate) %>% 
-  mutate(lib_recycling_kwh=lib_recycling_kwh+lib_ssps_kwh) %>% 
-  dplyr::select(-lib_ssps_kwh,-allocate)
-
-stationary <- stationary %>% dplyr::select(-lib_ssps_kwh,-lib_recycling_kwh,-allocate)
-
-# add dummies to join
-stationary <- stationary %>% 
-  mutate(Powertrain="SPS",
-         Sales=0,kwh_veh=0) 
-df$Scenario %>% unique()
-
-df <- rbind(df,stationary) # 1 M rows for now
-
-
-## Add Mineral Intensity --------
-
-df <- df %>% filter(kwh_required>0) 
-
-# use same chemistries for now
-df$chemistry %>% unique()
-df %>% group_by(chemistry) %>% summarise(x=sum(kwh_required)) %>% arrange(x)
-mineral$chemistry %>% unique()
-
-mineral <- mineral %>% filter(Mineral %in% min_interest)
-
-df <- df %>% left_join(mineral)
-nrow(df)/1e6 # 4.9 MILLION
-
-####################
-# CALCULATIONS ---------
-####################
-
-## Minerals ----
-df <- df %>% mutate(tons_mineral=kwh_required*kg_per_kwh/1e3)
-
-# Substract due to recycling - remaining SSPS goes to recycling as well
-# same year for now
-lib_outflow <- lib_outflow %>% 
-  left_join(mineral) %>% 
-  rename(kwh_required=lib_recycling_kwh) %>% 
-  mutate(tons_mineral=-kwh_required*kg_per_kwh/1e3,
-         Vehicle="Recycling")
-# BETTER TO DO IT AS ADDITIONAL VEHICLE: Scenario, and negative
-
-names(df)
-names(lib_outflow)
-lib_outflow$kwh_veh <- lib_outflow$Sales <- 0
-lib_outflow$Powertrain <- "Recycling"
-
-df <- rbind(df,lib_outflow)
-
-
-## Add Other sector demand -------- 
-names(df)
-names(otherSectors)
-
-# add region
-region_dict <- df %>% group_by(Region,Country) %>% tally() %>% mutate(n=NULL)
-otherSectors <- otherSectors %>% left_join(region_dict) %>% 
-  mutate(Scenario="No Scenario",chem_scenario="No Scenario",
-         chemistry="Other Sectors",
-         Vehicle="Other Sectors",kwh_veh=0,kwh_required=0,kg_per_kwh=0,Sales=0)
-rm(region_dict)
-df <- rbind(df,otherSectors)
-
+nrow(df_region_final)/1e6 # 3.8M rows
 
 ## Save results -----
-write.csv(df,"Results/MineralDemand.csv",row.names = F)
-
-# Save results at Region level
-names(df)
-df_region <- df %>% 
-  group_by(Scenario,chem_scenario,Year,Region,Powertrain,Vehicle,chemistry,Mineral) %>% 
-  reframe(tons_mineral=sum(tons_mineral)) %>% ungroup()
-nrow(df_region) # 516K records
-
-write.csv(df_region,"Results/MineralDemandRegion.csv",row.names = F)
+# write.csv(df,"Results/MineralDemand.csv",row.names = F)
+write.csv(df_region_final,"Results/MineralDemandRegion.csv",row.names = F)
 
 # EoF

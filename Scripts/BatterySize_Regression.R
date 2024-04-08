@@ -1,5 +1,5 @@
 # How to forecast battery size for LDV
-#
+# Creates model for regression and ranges by country
 # PBH October 2023
 
 
@@ -388,6 +388,58 @@ f.fig.save(sprintf(fig_name,"batsize_region"))
 p1+aes(y=efficiency)+labs(y="Energy \n Consumption \n [kWh/100km]")
 f.fig.save(sprintf(fig_name,"eff_region"))
 
+#### USA stats--------------
+df_fig <- df %>% 
+  filter(unit>0) %>% 
+  filter(Sales_Country=="USA") %>% 
+  group_by(Sales_Country,year,Propulsion) %>% 
+  reframe(Battery_Capacity=weighted.mean(Battery_Capacity,unit,na.rm = T),
+          Curbweight=weighted.mean(Curbweight,unit,na.rm = T),
+          efficiency=weighted.mean(efficiency,unit,na.rm = T),
+          range=weighted.mean(range,unit,na.rm=T),
+          unit=sum(unit)) %>% ungroup()
+
+df_fig <- df_fig %>% filter(Propulsion=="BEV") %>% 
+  filter(year>2014)
+
+p1 <- df_fig %>% 
+  ggplot(aes(year,Curbweight,group=Sales_Country))+
+  geom_line(col=colors_cat[10],linewidth=1)+
+  facet_wrap(~Propulsion,nrow=1)+
+  labs(title="Curbweight [kg]",y="",x="",col="",caption="Weighted by sales")+
+  scale_x_continuous(breaks = seq(2015,2022,1))+
+  # ylim(0,NA)+
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
+p1
+f.fig.save(sprintf(fig_name,"Weight_USA"))
+
+p1+aes(y=range)+labs(title="Range [km]",y="")
+f.fig.save(sprintf(fig_name,"range_USA"))
+
+p1+aes(y=Battery_Capacity)+labs(title="Battery Capacity [kWh]",y="")
+f.fig.save(sprintf(fig_name,"batsize_USA"))
+
+p1+aes(y=efficiency)+labs(title="Energy Consumption [kWh/100km]",y="")
+f.fig.save(sprintf(fig_name,"eff_USA"))
+
+# Model sales
+df %>% 
+  filter(unit>0, year>2014,Propulsion=="BEV") %>% 
+  filter(Sales_Country=="USA") %>% 
+  group_by(Sales_Country,year,Make_Model) %>% 
+  reframe(unit=sum(unit,na.rm=T)) %>% ungroup() %>% 
+  group_by(Sales_Country,year) %>% 
+  mutate(share_sales=unit/sum(unit)) %>% ungroup() %>% 
+  arrange(desc(share_sales)) %>%
+  mutate(Make_Model=if_else(unit>2e4,Make_Model,"Other")) %>% 
+  ggplot(aes(year,unit,fill=Make_Model))+
+  geom_col()+
+  scale_x_continuous(breaks = seq(2015,2022,1))+
+  scale_y_continuous(labels=function(x) format(x, big.mark = " ", scientific = FALSE))+
+  labs(x="",y="BEV \n sales",fill="Model")
+f.fig.save(sprintf(fig_name,"sales_USA"))
+
+
 #### Spaghetti plot by country --------------
 df_fig <- df %>% 
   filter(unit>0) %>% 
@@ -400,7 +452,7 @@ df_fig <- df %>%
 
 # last 4 years, at least 1000 unit
 (conts <- df_fig %>% filter(year==2022) %>% filter(unit>1e3) %>% 
-  pull(Sales_Country) %>% unique())
+    pull(Sales_Country) %>% unique())
 df_fig <- df_fig %>%
   filter(Sales_Country %in% conts) %>% 
   filter(year>2017)
@@ -992,8 +1044,6 @@ new_data %>%
 f.fig.save(sprintf(fig_name,"Predictions_Batsize"))
 
 # COUNTRY LEVEL REGRESSION -------------
-prop <- "BEV"
-prop <- "PHEV"
 
 # Battery capacity declared vs sales
 # Note that they may be a mistmacht between sales and catalogue
@@ -1007,14 +1057,16 @@ df %>%
 
 df %>% 
   filter(unit>0,!is.na(range)) %>% 
-  filter(Propulsion==prop) %>% 
   # filter(year>2018) %>% 
   mutate(Region=factor(Sales_Region)) %>% 
   ggplot(aes(range,fill=Region,group=Region,weights=unit))+
-  geom_density(alpha=.5)
+  geom_density(alpha=.5)+
+  facet_wrap(~Propulsion,ncol=1,scales = "free")
 
 
 library(ggridges)
+prop="BEV"
+prop="PHEV"
 df %>% 
   filter(Propulsion==prop) %>%
   filter(Modelyear>2010) %>%
@@ -1032,15 +1084,13 @@ df %>%
        caption=paste0(prop," Sales 2021-2022"))
 f.fig.save(sprintf(fig_name,paste0("Density_Range_",prop)))
 
-
 segment_share <- df %>% 
   # filter(year==2022) %>% 
   filter(unit>0) %>% 
   filter(!is.na(Global_Segment)) %>% 
-  filter(Propulsion==prop) %>%
   mutate(Global_Segment=Global_Segment %>% 
            str_remove_all("-A|-B|-C|-D|-E|-F")) %>% 
-  group_by(year,Sales_Region,Sales_Country,Global_Segment) %>% 
+  group_by(year,Sales_Region,Sales_Country,Global_Segment,Propulsion) %>% 
   reframe(x=sum(unit,na.rm=T)) %>% ungroup() %>% 
   group_by(year,Sales_Country) %>% 
   mutate(share_seg=x/sum(x)) %>% ungroup() %>%
@@ -1052,8 +1102,6 @@ skimr::skim_without_charts(segment_share)
 
 df_country <- df %>% 
   filter(unit>0) %>% 
-  filter(Propulsion==prop) %>%
-  # filter(Propulsion=="PHEV") %>% 
   filter(!is.na(Global_Segment)) %>% 
   group_by(Sales_Region,Sales_Sub_Region,Sales_Country,
            year,Propulsion) %>% 
@@ -1070,21 +1118,20 @@ df_country <- df %>%
 bat_country <- df_country %>% filter(unit>50)
 
 # global average:
-aux <- bat_country %>% filter(year==2022)
-weighted.mean(aux$kWh_veh,aux$unit)
-sum(bat_country$unit)/1e6
+bat_country %>% filter(year==2022) %>% 
+  group_by(Propulsion) %>% reframe(x=weighted.mean(kWh_veh,unit))
+bat_country %>% group_by(Propulsion) %>% reframe(x=sum(unit)/1e6)
 
 # average by category
 df %>% 
   filter(year==2022) %>%
-  filter(Propulsion==prop) %>% 
   mutate(Global_Segment=Global_Segment %>% 
            str_remove_all("-A|-B|-C|-D|-E|-F")) %>% 
-  group_by(Global_Segment) %>% summarise(MWh=sum(MWh),unit=sum(unit)) %>% ungroup() %>% 
+  group_by(Global_Segment,Propulsion) %>% summarise(MWh=sum(MWh),unit=sum(unit)) %>% ungroup() %>% 
   mutate(kWh_veh=MWh*1e3/unit) %>% arrange(desc(unit))
 
 # range
-weighted.mean(aux$range,aux$unit)
+bat_country %>% group_by(Propulsion) %>% reframe(x=weighted.mean(range,unit))
 
 mod <- lm(kWh_veh~
             # t+I(t^2)+
@@ -1095,13 +1142,25 @@ mod <- lm(kWh_veh~
             range,
             # Sales_Country,
           # Sales_Region,
-          data=bat_country,
+          data=filter(bat_country,Propulsion=="BEV"),
           weights = unit)
 # mod <- lm(kWh_veh~Sales_Country+t, 
 #           data=bat_country)
 nobs(mod)
 summary(mod)
 summary(mod)$adj.r.squared
+
+mod_phev <- lm(kWh_veh~range,weights = unit,
+               data=filter(bat_country,Propulsion=="PHEV"))
+summary(mod_phev)
+
+# SAVE DATA
+write.csv(tibble(Propulsion=c("BEV","PHEV"),
+                 Intercept=c(coefficients(mod)[1],coefficients(mod_phev)[1]),
+                 Range_Slope=c(coefficients(mod)[2],coefficients(mod_phev)[2])),
+          sprintf(url_save,"BatSizeLinearModel"),row.names = F)
+write.csv(bat_country,sprintf(url_save,"Data_LinearModel"),row.names = F)
+
 
 # scenarios
 predict(mod,newdata = tibble(range=424))

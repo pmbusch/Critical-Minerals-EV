@@ -200,7 +200,8 @@ dict_pop <- read_excel("Data/Eq_Countries_ICCT_Pop_GDP.xlsx",
                        sheet = "Pop_Eq_Country2",range = "B1:C238")
 names(dict_pop)[1] <- "country" 
 pop <- pop %>% left_join(dict_pop) %>% group_by(ICCT_Country) %>% 
-  reframe(pop=sum(pop)) %>% ungroup() %>% mutate(perc_pop=pop/sum(pop))
+  reframe(pop=sum(pop)) %>% ungroup() %>% mutate(perc_pop=pop/sum(pop)) %>% 
+  filter(!is.na(ICCT_Country))
 sum(pop$perc_pop)  
 sum(pop$pop)/1e9 # 7.88 billions
 
@@ -229,8 +230,10 @@ sum(gdp$gdp,na.rm=T)/1e9
 dict_gdp <- read_excel("Data/Eq_Countries_ICCT_Pop_GDP.xlsx",
                        sheet = "GDP_Eq_Country2",range = "A1:B219")
 names(dict_gdp)[1] <- "Country" 
+gdp <- gdp %>% left_join(dict_gdp)
 gdp <- gdp %>% left_join(dict_gdp) %>% group_by(ICCT_Country) %>% 
-  reframe(gdp=sum(gdp)) %>% ungroup() %>% mutate(perc_gdp=gdp/sum(gdp))
+  reframe(gdp=sum(gdp)) %>% ungroup() %>% mutate(perc_gdp=gdp/sum(gdp)) %>% 
+  filter(!is.na(ICCT_Country))
 sum(gdp$perc_gdp)  
 sum(gdp$gdp)/1e9 
 

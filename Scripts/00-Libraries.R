@@ -7,7 +7,7 @@ list_libraries <- c("tidyverse", "tidyverse","readr","readxl",
                     "ggplot2","data.table","dplyr","gridExtra",
                     "glmnet","openxlsx","reshape2",
                     "scales",
-                    "plotly", # sankey
+                    # "plotly", # sankey
                     "RColorBrewer",
                     "sf","ggrepel") # maps
 
@@ -67,5 +67,7 @@ region_colors <- c("United States" = "#1f78b4",
                    "Africa" = "#4682b4",
                    "Rest of the World"="#808080")
 
+resource_colors <- c("Brine" = "#0000FF33", "Hard Rock" = "#80008080",
+                     "Volcano-Sedimentary" = "#FF000080")
 
 # EoF

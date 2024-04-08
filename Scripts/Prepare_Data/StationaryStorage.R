@@ -74,7 +74,7 @@ ess <- ess %>% rename(Year=year) %>%
 ess$Year %>% range()
  
 # Dissagregate based on Generation Share of 2022 ----
-source("Scripts/ElectGeneration.R", encoding = "UTF-8")
+source("Scripts/Prepare_Data/ElectGeneration.R", encoding = "UTF-8")
 
 # match totals
 ess %>% filter(Year %in% c(2022,2050)) %>% group_by(Year) %>% reframe(sum(stationaryPower))
@@ -133,6 +133,56 @@ ess_fig %>%
   guides(alpha = FALSE)
 
 f.fig.save("Figures/SPS/SPS_region.png")
+
+# Scenario Sodium Battery adoption -----
+# Half of LFP goes towards Sodium based battery
+# Electrolyte based on sodium: NaPF6
+# Cathode active material: NaCu(1/3)Fe(1/3)Mn(1/3)O2
+# Anode:	Hard Carbon
+
+
+# Start at 2030, reach half of share by 2040, then half for rest of period
+share_difussion <- tibble(Year=2022:2050,
+                          share_multiplier=c(rep(0,7),
+                                             seq(0,1/2,length.out=12),
+                                             rep(0.5,10)))
+# Create new rows duplicate based on NMC - with only half of share
+ess_SIB <- ess %>% filter(str_detect(chemistry,"LFP")) %>% 
+  mutate(chemistry="SIB") %>% 
+  left_join(share_difussion) %>% 
+  mutate(stationaryPower=stationaryPower*share_multiplier, share_multiplier=NULL)
+
+# add to original, but reduce to half
+ess_SIB <- ess %>%
+  left_join(share_difussion) %>% 
+  mutate(stationaryPower=if_else(str_detect(chemistry,"LFP"),
+                             stationaryPower*(1-share_multiplier),
+                             stationaryPower),share_multiplier=NULL) %>% 
+  rbind(ess_SIB) 
+
+ess_SIB %>% group_by(Year) %>% reframe(sum(stationaryPower))
+
+write.csv(ess_SIB,"Results/Sodium_stationaryPower.csv",row.names = F)
+
+
+ess_fig <- ess_SIB %>% 
+  group_by(Year,chemistry) %>% 
+  reframe(stationaryPower=sum(stationaryPower)) %>% ungroup() %>% 
+  filter(stationaryPower>0 | chemistry=="SIB") %>%
+  mutate(proj=Year>2040)
+
+ess_fig %>% 
+  ggplot(aes(Year,stationaryPower,fill=chemistry))+
+  geom_area(aes(alpha=proj))+
+  geom_area(data=filter(ess_fig,Year>2039,Year<2042),alpha=0.7,linewidth=0.01)+ # fill missing gap behind
+  scale_y_continuous(labels=function(x) format(x, big.mark = " ", scientific = FALSE))+
+  scale_alpha_manual(values=c(1,0.7))+
+  coord_cartesian(expand = F)+
+  scale_fill_viridis_d(option = "turbo")+
+  labs(x="",y="MWh",fill="Battery Chemistry",caption = "2040-2050 projection based on 2030-2040 avg. growth")+
+  guides(alpha = FALSE)
+
+f.fig.save("Figures/SPS/Sodium_SPS.png")
 
 
 # EoF
