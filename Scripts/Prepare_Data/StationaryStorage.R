@@ -60,18 +60,25 @@ for (y in 2041:2050) {
   ess <- rbind(ess,ess_aux)
 }
 
-# # repeat 2040 towards 2050
-# ess_2040 <- ess %>% filter(year==2040)
-# for (i in 1:10){
-#   ess_aux <- ess_2040 %>% mutate(year=year+i)
-#   ess <- rbind(ess,ess_aux)
-#   rm(ess_aux)
-# }
+# Extend to 2070 by 1%
+ess_aux <- ess %>% filter(year==2050)
+for (y in 2051:2070) {
+  ess_aux$stationaryPower <- ess_aux$stationaryPower * (1 + 1 / 100)
+  ess_aux <- ess_aux %>% mutate(year=y)
+  ess <- rbind(ess,ess_aux)
+}
+
+
 ess %>% group_by(year) %>% reframe(x=sum(stationaryPower)) %>% arrange(desc(x))
 
 ess <- ess %>% rename(Year=year) %>% 
   filter(Year>2021)
 ess$Year %>% range()
+
+
+
+
+
  
 # Dissagregate based on Generation Share of 2022 ----
 source("Scripts/Prepare_Data/ElectGeneration.R", encoding = "UTF-8")
@@ -96,6 +103,7 @@ ess_fig <- ess %>%
   group_by(Year,chemistry) %>% 
   reframe(stationaryPower=sum(stationaryPower)) %>% ungroup() %>% 
   filter(stationaryPower>0) %>% 
+  filter(Year<2051) %>%
   mutate(proj=Year>2040)
 
 ess_fig %>% 
@@ -110,6 +118,7 @@ ess_fig %>%
   guides(alpha = FALSE)
 
 f.fig.save("Figures/SPS/SPS.png")
+# f.fig.save("Figures/SPS/SPS2070.png")
 
 
 # by region
@@ -118,6 +127,7 @@ ess_fig <- ess %>%
   reframe(stationaryPower=sum(stationaryPower)) %>% ungroup() %>% 
   filter(stationaryPower>0) %>% 
   mutate(proj=Year>2040) %>% 
+  filter(Year<2051) %>% 
   mutate(ICCT_Region=factor(ICCT_Region,levels=region_level))
   
 
@@ -142,10 +152,11 @@ f.fig.save("Figures/SPS/SPS_region.png")
 
 
 # Start at 2030, reach half of share by 2040, then half for rest of period
-share_difussion <- tibble(Year=2022:2050,
+share_difussion <- tibble(Year=2022:2070,
                           share_multiplier=c(rep(0,7),
                                              seq(0,1/2,length.out=12),
-                                             rep(0.5,10)))
+                                             rep(0.5,10),
+                                             rep(0.5,20)))
 # Create new rows duplicate based on NMC - with only half of share
 ess_SIB <- ess %>% filter(str_detect(chemistry,"LFP")) %>% 
   mutate(chemistry="SIB") %>% 
@@ -169,6 +180,7 @@ ess_fig <- ess_SIB %>%
   group_by(Year,chemistry) %>% 
   reframe(stationaryPower=sum(stationaryPower)) %>% ungroup() %>% 
   filter(stationaryPower>0 | chemistry=="SIB") %>%
+  filter(Year<2051) %>% 
   mutate(proj=Year>2040)
 
 ess_fig %>% 

@@ -115,6 +115,16 @@ ggplot(df_fig,aes(year,share,fill=chemistry))+
        caption = "Source: Benchmark Mineral Intelligence. \n 2040-2050 projection based on 2035-2040 avg. growth")
 f.fig.save("Figures/Battery/EV_Bench_Battery_Ext.png")
 
+# Project share up to 2070 by repeating 2050
+range(df_ext$year)
+df_aux <- df_ext %>% filter(year==2050)
+for (y in 2051:2070) {
+  df_aux <- df_aux %>% mutate(year=y)
+  df_ext <- rbind(df_ext,df_aux)
+}
+
+
+
 ## Project EV volumes 2022 using benchmark forecast -----
 # get proportional increase relative to 2022 for Benchmark 
 bench2022 <- df_ext %>% filter(year==2022) %>% mutate(year=NULL) %>% rename(b2022=share)
@@ -141,6 +151,7 @@ write.csv(evVol,"Results/Battery/Chemistry_Scenarios/bat_share_2050_world.csv",r
 
 evVol %>% 
   filter(Powertrain=="BEV") %>% 
+  filter(year<2051) %>% 
   ggplot(aes(year,share_units,fill=chemistry))+
   geom_area()+
   coord_cartesian(expand = F)+
@@ -163,6 +174,7 @@ evVol_region <- evVol_region %>%
 write.csv(evVol_region,"Results/Battery/Chemistry_Scenarios/bat_share_2050_region.csv",row.names = F)
 
 evVol_region %>% 
+  filter(year<2051) %>% 
   filter(Powertrain=="BEV") %>% 
   filter(Region %in% c("United States","China","Brazil","European Union",
                        "India","Japan")) %>% 
@@ -174,8 +186,8 @@ evVol_region %>%
   scale_y_continuous(labels = scales::percent_format(scale = 100)) +
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
   guides(alpha=F)+
-  labs(x="",y="EV \n Market \n Share",fill="Chemistry")
-
+  labs(x="",y="",title="EV Market Share",fill="Chemistry")+
+  theme(panel.spacing.x = unit(0.75, "cm"))
 
 f.fig.save("Figures/Battery/EV_Bench_Battery_AdjustedRegion.png")
 
@@ -191,6 +203,7 @@ evVol_Country <- evVol_Country %>%
 write.csv(evVol_Country,"Results/Battery/Chemistry_Scenarios/bat_share_2050_Country.csv",row.names = F)
 
 evVol_Country %>% 
+  filter(year<2051) %>% 
   filter(Powertrain=="BEV") %>% 
   ggplot(aes(year,share_units,fill=chemistry))+
   geom_area()+
@@ -210,16 +223,18 @@ evVol_Country %>%
 
 ## LFP doubles ------------
 
-# Make LFP twice as big by 2050
+# Make LFP twice as big by 2050, then maintain
 exp_fact <- evVol %>% filter(year==2050,chemistry=="LFP") %>% ungroup() %>% 
   mutate(exp_factor=2*(1-share_units)/(1-share_units*2)) %>%  # expansion factor formula to scale x 2 once re-normalizing
   mutate(exp_factor=if_else(exp_factor<0|exp_factor>10,10,exp_factor)) %>%  # if negative, make really big to get 100 share
   mutate(chemistry=NULL,year=NULL,share_units=NULL)
 
 # Expand to future years
-expansion_df <- expand.grid(Powertrain=c("BEV","PHEV"),year=2022:2050) %>% 
+expansion_df <- expand.grid(Powertrain=c("BEV","PHEV"),year=2022:2070) %>% 
   left_join(exp_fact) %>% group_by(Powertrain) %>% 
-  mutate(exp_factor=1+(exp_factor-1)/28*(year-2022)) %>% # 28 years between 2022 to 2050
+  mutate(exp_factor=if_else(year<2051,
+                            1+(exp_factor-1)/28*(year-2022),
+                            1+(exp_factor-1)/28*(2050-2022))) %>% # 28 years between 2022 to 2050
   ungroup() 
 
 # add to original
@@ -234,6 +249,7 @@ write.csv(evVol_LFP,"Results/Battery/Chemistry_Scenarios/LFP_scen_world.csv",row
 
 evVol_LFP %>% 
   filter(Powertrain=="BEV") %>% 
+  filter(year<2051) %>% 
   ggplot(aes(year,share_units,fill=chemistry))+
   geom_area()+
   coord_cartesian(expand = F)+
@@ -253,10 +269,12 @@ exp_fact <- evVol_region %>% filter(year==2050,chemistry=="LFP") %>% ungroup() %
   mutate(chemistry=NULL,year=NULL,share_units=NULL)
 
 # Expand to future years
-expansion_df <- expand.grid(Powertrain=c("BEV","PHEV"),year=2022:2050,
+expansion_df <- expand.grid(Powertrain=c("BEV","PHEV"),year=2022:2070,
                             Region=unique(exp_fact$Region)) %>% 
   left_join(exp_fact) %>% group_by(Powertrain,Region) %>% 
-  mutate(exp_factor=1+(exp_factor-1)/28*(year-2022)) %>%  # 28 years between 2022 to 2050
+  mutate(exp_factor=if_else(year<2051,
+                            1+(exp_factor-1)/28*(year-2022),
+                            1+(exp_factor-1)/28*(2050-2022))) %>% # 28 years between 2022 to 2050
   ungroup()
 
 # add to original
@@ -271,6 +289,7 @@ write.csv(evVol_LFP,"Results/Battery/Chemistry_Scenarios/LFP_scen_region.csv",ro
 
 evVol_LFP %>% 
   filter(Powertrain=="BEV") %>% 
+  filter(year<2051) %>% 
   filter(Region %in% c("United States","China","Brazil","European Union",
                        "India","Japan")) %>%
   ggplot(aes(year,share_units,fill=chemistry))+
@@ -293,9 +312,11 @@ exp_fact <- evVol %>% filter(year==2050,chemistry=="NMC 811") %>% ungroup() %>%
   mutate(chemistry=NULL,year=NULL,share_units=NULL)
 
 # Expand to future years
-expansion_df <- expand.grid(Powertrain=c("BEV","PHEV"),year=2022:2050) %>% 
+expansion_df <- expand.grid(Powertrain=c("BEV","PHEV"),year=2022:2070) %>% 
   left_join(exp_fact) %>% group_by(Powertrain) %>% 
-  mutate(exp_factor=1+(exp_factor-1)/28*(year-2022)) %>% # 28 years between 2022 to 2050
+  mutate(exp_factor=if_else(year<2051,
+                            1+(exp_factor-1)/28*(year-2022),
+                            1+(exp_factor-1)/28*(2050-2022))) %>% # 28 years between 2022 to 2050
   ungroup() 
 
 # add to original
@@ -310,6 +331,7 @@ write.csv(evVol_NMC,"Results/Battery/Chemistry_Scenarios/NMC811_scen_world.csv",
 
 evVol_NMC %>% 
   filter(Powertrain=="BEV") %>% 
+  filter(year<2051) %>% 
   ggplot(aes(year,share_units,fill=chemistry))+
   geom_area()+
   coord_cartesian(expand = F)+
@@ -329,10 +351,12 @@ exp_fact <- evVol_region %>% filter(year==2050,chemistry=="NMC 811") %>% ungroup
   mutate(chemistry=NULL,year=NULL,share_units=NULL)
 
 # Expand to future years
-expansion_df <- expand.grid(Powertrain=c("BEV","PHEV"),year=2022:2050,
+expansion_df <- expand.grid(Powertrain=c("BEV","PHEV"),year=2022:2070,
                             Region=unique(exp_fact$Region)) %>% 
   left_join(exp_fact) %>% group_by(Powertrain,Region) %>% 
-  mutate(exp_factor=1+(exp_factor-1)/28*(year-2022)) %>%  # 28 years between 2022 to 2050
+  mutate(exp_factor=if_else(year<2051,
+                            1+(exp_factor-1)/28*(year-2022),
+                            1+(exp_factor-1)/28*(2050-2022))) %>% # 28 years between 2022 to 2050
   ungroup()
 
 # add to original
@@ -347,6 +371,7 @@ write.csv(evVol_NMC,"Results/Battery/Chemistry_Scenarios/NMC811_scen_region.csv"
 
 evVol_NMC %>% 
   filter(Powertrain=="BEV") %>% 
+  filter(year<2051) %>% 
   filter(Region %in% c("United States","China","Brazil","European Union",
                        "India","Japan")) %>%
   ggplot(aes(year,share_units,fill=chemistry))+
@@ -367,10 +392,11 @@ f.fig.save("Figures/Battery/EV_Bench_Battery_AdjustedNMC811Region.png")
 # Anode: Li metal
 
 # Start at 2030, reach half of share by 2040, then half for rest of period
-share_difussion <- tibble(year=2022:2050,
+share_difussion <- tibble(year=2022:2070,
        share_multiplier=c(rep(0,7),
                           seq(0,1/2,length.out=12),
-                          rep(0.5,10)))
+                          rep(0.5,10),
+                          rep(0.5,20)))
 # Create new rows duplicate based on NMC - with only half of share
 evVol_NMC <- evVol %>% filter(str_detect(chemistry,"NMC|NCA")) %>% 
   mutate(chemistry=paste0("SS ",chemistry)) %>% 
@@ -392,6 +418,7 @@ write.csv(evVol_NMC,"Results/Battery/Chemistry_Scenarios/SolidState_scen_world.c
 
 evVol_NMC %>% 
   filter(Powertrain=="BEV") %>% 
+  filter(year<2051) %>% 
   ggplot(aes(year,share_units,fill=chemistry))+
   geom_area()+
   coord_cartesian(expand = F)+
@@ -423,6 +450,7 @@ write.csv(evVol_NMC,"Results/Battery/Chemistry_Scenarios/SolidState_scen_region.
 
 evVol_NMC %>% 
   filter(Powertrain=="BEV") %>% 
+  filter(year<2051) %>% 
   filter(Region %in% c("United States","China","Brazil","European Union",
                        "India","Japan")) %>%
   ggplot(aes(year,share_units,fill=chemistry))+
@@ -444,10 +472,11 @@ f.fig.save("Figures/Battery/EV_Bench_Battery_SolidStateRegion.png")
 # Anode:	Hard Carbon
 
 # Start at 2030, reach half of share by 2040, then half for rest of period
-share_difussion <- tibble(year=2022:2050,
+share_difussion <- tibble(year=2022:2070,
                           share_multiplier=c(rep(0,7),
                                              seq(0,1/2,length.out=12),
-                                             rep(0.5,10)))
+                                             rep(0.5,10),
+                                             rep(0.5,20)))
 # Create new rows duplicate based on NMC - with only half of share
 evVol_NMC <- evVol %>% filter(str_detect(chemistry,"LFP")) %>% 
   mutate(chemistry="SIB") %>% 
@@ -469,6 +498,7 @@ write.csv(evVol_NMC,"Results/Battery/Chemistry_Scenarios/Sodium_scen_world.csv",
 
 evVol_NMC %>% 
   filter(Powertrain=="BEV") %>% 
+  filter(year<2051) %>% 
   ggplot(aes(year,share_units,fill=chemistry))+
   geom_area()+
   coord_cartesian(expand = F)+
@@ -500,6 +530,7 @@ write.csv(evVol_NMC,"Results/Battery/Chemistry_Scenarios/Sodium_scen_region.csv"
 
 evVol_NMC %>% 
   filter(Powertrain=="BEV") %>% 
+  filter(year<2051) %>% 
   filter(Region %in% c("United States","China","Brazil","European Union",
                        "India","Japan")) %>%
   ggplot(aes(year,share_units,fill=chemistry))+
@@ -515,4 +546,4 @@ evVol_NMC %>%
 f.fig.save("Figures/Battery/EV_Bench_Battery_SodiumRegion.png")
 
 
-# EoF
+# EoF 

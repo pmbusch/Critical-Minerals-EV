@@ -125,7 +125,7 @@ bat_range_na <- bat_range %>% filter(is.na(range)) %>% # Jojn by region
 bat_range <- bat_range %>% filter(!is.na(range)) %>% rbind(bat_range_na)
 
 # Scenarios for all
-years <- tibble(Year=2022:2050,dummy=1)
+years <- tibble(Year=2022:2070,dummy=1)
 batSize_scen <- tibble(dummy=1,capacity_scenario=c("Baseline","Low Range","High Range"))
 # scenario constant
 bat_2050 <- bat_ldv %>% mutate(dummy=1) %>% 

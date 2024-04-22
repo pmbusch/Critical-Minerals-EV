@@ -385,19 +385,28 @@ f.fig.save(sprintf(fig_name,"Bat_Time"))
 ## Chemistry stacked -----
 prop="BEV"
 
+chem_level <- c("LFP","LMO","NCA","NMC 111","NMC 532",
+                "NMC 622","NMC 721","NMC 811","NMCA 89:4:4:3")
+
 bat_region %>% 
   filter(Powertrain==prop) %>% 
   filter(Year=="2022") %>% 
+  # Show EV Volumnes regions
+  left_join(eq_region,by=c("Region"="ICCT_Region")) %>% mutate(Region=EVV_SubRegion) %>% 
+  distinct(Region,chemistry,.keep_all = T) %>% 
+# end show
+  mutate(chemistry=factor(chemistry,levels=chem_level)) %>% 
   ggplot(aes(reorder(Region,kwh_veh_total),kwh_veh,fill=fct_rev(chemistry)))+
   geom_col(position = "stack")+
   # facet_wrap(~Propulsion,scales = "free_y",dir = "v")+
   coord_flip(expand = F)+
-  labs(x="",y=paste0("kWh Battery Capacity per ",prop," Vehicle"),fill="Battery Chemistry Share")+
-  scale_fill_viridis_d(option="turbo")+
+  labs(x="",y=paste0("kWh Battery Capacity per ",prop," Vehicle"),fill="Battery \nChemistry \nShare")+
+  scale_fill_viridis_d(option="turbo",direction = -1)+
   # tidytext::scale_x_reordered()+
-  theme_bw(20)+ 
+  theme_bw(10)+ 
   theme(panel.grid.major = element_blank(),
-        legend.position = "bottom")+
+        legend.position = "bottom",
+        legend.text = element_text(size=8))+
   guides(fill = guide_legend(reverse = T,byrow = T))
 
 f.fig.save(sprintf(fig_name,paste0(prop,"_stackChem")))

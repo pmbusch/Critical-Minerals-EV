@@ -7,7 +7,15 @@ fig_name <- "Figures/MineralDemand/Comparison/%s.png"
 
 # load pre-computed results
 df <- read.csv("Results/MineralDemandRegion.csv") # faster
+# df <- read.csv("Results/MineralDemand_FewScenarios.csv") # much faster
 
+df <- df %>% 
+  filter(chem_scenario=="Baseline",  
+         capacity_scenario=="Baseline",
+         lifetime_scenario=="Baseline",
+         recycling_scenario=="Baseline")
+
+df <- df %>% filter(Year<2051)
 
 # IEA Critical Minerals Review 2023 ---------
 # https://www.iea.org/data-and-statistics/data-tools/critical-minerals-data-explorer
@@ -72,9 +80,6 @@ iea %>%
   mutate(ratio=`2050`/`2022`) %>% dplyr::select(-`2022`,-`2050`) %>% 
   pivot_wider(names_from = IEA_Scenario, values_from = ratio)
 
-
-
-
 ## Comparison ours vs IEA ------
 
 # normalize scenarios
@@ -93,6 +98,7 @@ iea_aux <- iea %>% left_join(norm_scen) %>% mutate(IEA_Scenario=NULL,Scenario=NU
 # join to df
 df_iea <- df %>% 
   filter(chem_scenario=="Baseline",capacity_scenario=="Baseline") %>% 
+  filter(lifetime_scenario=="Baseline",recycling_scenario=="Baseline") %>%
   filter(Mineral %in% min_interest) %>% 
   # group to sectors
   mutate(Sector=case_when(
@@ -131,3 +137,5 @@ df_iea %>%
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))
 
 f.fig.save(sprintf(fig_name,"IEA"),w=8.7*3,h=8.7*2)
+
+# EoF

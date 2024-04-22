@@ -45,7 +45,7 @@ mineral %>%
   theme(
     # legend.position = c(0.9,0.8),
     # strip.background = element_rect(margin = margin(0, 0, 0.1, 0)),
-    strip.text = element_text(angle=0,size=6,margin = margin()))
+    strip.text = element_text(angle=0,size=10,margin = margin()))
 
 f.fig.save("Figures/MinIntensity.png")
 

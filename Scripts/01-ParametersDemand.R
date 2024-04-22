@@ -8,21 +8,55 @@ library(tidyverse)
 
 # LDV Survival Parameters --------------
 
+recycling_scenarios <- 
+  tibble(recycling_scenario = c("Baseline","Enhanced recycling","Enhanced SSPS"),
+         ssps_perc = c(0.5,0.3,0.7)) %>% 
+  mutate(recycling_perc = 1-ssps_perc)
 
 
 # Battery Survival Parameters ------
-mat_recovery_recycling <- 0.9 # % of material recovery in recycling
-# change to:
+delay_recycling_year <- 1 # 1 year to recycle to get new demand
+statHealth_deg <- 0.02 # state of health of batteries degradation per year, for SSPS purposes
+cathode_scrap <- 0.04 # 
+
+
+# % of material recovery in recycling
 # 90% for cobalt, nickel, copper and lead by the end of 2027, rising to 95% in 2031; 
 # and 50% for lithium by 2027, rising to 80% in 2031.
-# mat_recovery_recycling <- tibble(
-#   Mineral=c("Lithium","Nickel","Cobalt","Manganese","Phosphorus"),
-#   mat_recov_recyc=c(0.8,0.95,0.95,??,??))
+EU_targets <- tibble(
+  Mineral=c("Lithium","Nickel","Cobalt","Manganese","Phosphorus"),
+  mat_recov_recyc1=c(0.5,0.9,0.9,0,0),
+  mat_recov_recyc2=c(0.8,0.95,0.95,0,0),
+  dummy=1) %>% 
+  left_join(tibble(Year=2022:2070,dummy=1),
+            relationship = "many-to-many") %>% 
+  # linear adoption of targets
+  mutate(EU_mat_recov_recyc=case_when(
+    Year<2029 ~ mat_recov_recyc1/7*(Year-2021),
+    Year<2033 ~mat_recov_recyc1+(mat_recov_recyc2-mat_recov_recyc1)/5*(Year-2027),
+    T ~ mat_recov_recyc2)) %>% 
+  dplyr::select(-mat_recov_recyc1,-mat_recov_recyc2,-dummy)
+
+China_targets <- tibble(
+  Mineral=c("Lithium","Nickel","Cobalt","Manganese","Phosphorus"),
+  China_mat_recove=c(0.85,0.98,0.98,0.98,0))
 
 
-delay_recycling_year <- 1 # 1 year to recycle to get new demand
-statHealth_SPSS <- 0.7 # state of health of batteries going to SSPS
-cathode_scrap <- 0.04
+mat_recovery_recycling <- tibble(recycling_scenarios=recycling_scenarios$recycling_scenario) %>% 
+  mutate(dummy=1) %>% left_join(mutate(EU_targets,dummy=1), relationship = "many-to-many") %>% 
+  mutate(dummy=1) %>% left_join(mutate(China_targets,dummy=1), relationship = "many-to-many") %>% 
+  mutate(mat_recov_recyc=case_when(
+    recycling_scenarios=="Baseline" ~ 0.05,
+    recycling_scenarios=="Enhanced recycling" ~ EU_mat_recov_recyc,
+    recycling_scenarios=="Enhanced SSPS" ~ 0.05)) %>% 
+  # EU and China Baseline with regulations
+  left_join(tibble(Region=region_level,dummy=1), relationship = "many-to-many") %>% dplyr::select(-dummy) %>% 
+  mutate(mat_recov_recyc=case_when(
+    Region %in% c("European Union") ~ EU_mat_recov_recyc,
+    Region %in% c("China") ~ China_mat_recove,
+    T ~mat_recov_recyc),
+    EU_mat_recov_recyc=NULL,China_mat_recove=NULL)
 
-
+rm(EU_targets,China_targets)
+  
 

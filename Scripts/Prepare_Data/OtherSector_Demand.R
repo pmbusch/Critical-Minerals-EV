@@ -244,9 +244,17 @@ demand2 <- gdp %>% rename(Country=ICCT_Country) %>%
          tons_mineral=tons_mineral*perc_gdp,perc_gdp=NULL)
 demand2 %>% filter(Year==2050) %>% group_by(Powertrain,Mineral) %>% 
   reframe(ton=sum(tons_mineral))
+demand <- rbind(demand,demand2)
+
+# Extend towards 2070 -----
+demand_aux <- demand %>% filter(Year==2050)
+for (y in 2051:2070) {
+  demand_aux <- demand_aux %>% mutate(Year=y)
+  demand <- rbind(demand,demand_aux)
+}
+range(demand$Year)
 
 # Save ----------
-demand <- rbind(demand,demand2)
 write.csv(demand,"Results/Intermediate Results/otherSector_demand.csv",row.names = F)
 
 # EoF

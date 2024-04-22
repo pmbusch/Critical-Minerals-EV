@@ -24,6 +24,9 @@ nrow(df) # 116 deposits
 sum(df$Mt_Li) # 76 Mt
 
 names(df)
+# Cumulative demand
+df_demand <- read.csv("Results/MineralCumulativeDemand.csv")
+
 
 # Process Data ------------
 

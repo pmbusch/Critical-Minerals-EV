@@ -37,7 +37,7 @@ icct <- icct %>%
 # Group data -----
 
 # group data at regional level to make it more digestible
-icct_reg <- icct %>% group_by(Region,CY,Powertrain,Scenario,Vehicle) %>% 
+icct_reg <- icct %>% group_by(Region,Year,Powertrain,Scenario,Vehicle) %>% 
   reframe(Sales=sum(Sales)) %>% ungroup()
 
 # Figures to Show data ------
@@ -45,13 +45,16 @@ icct_reg <- icct %>% group_by(Region,CY,Powertrain,Scenario,Vehicle) %>%
 # Optinal to run
 fig_name <- "Figures/ICCT/%s.png"
 
-theme_set(theme_bw(20)+ theme(panel.grid.major = element_blank(),axis.title.y=element_text(angle=0)))
+theme_set(theme_bw(10)+ 
+            theme(panel.grid.major = element_blank(),
+                  panel.grid.minor = element_blank(),
+                  axis.title.y=element_text(angle=0)))
 
 
 ## Sales by scenario   -----------
-icct %>% group_by(CY,Scenario,Powertrain) %>% 
+icct %>% group_by(Year,Scenario,Powertrain) %>% 
   reframe(Sales=sum(Sales)/1e6) %>% ungroup() %>% 
-  ggplot(aes(CY,Sales,col=Scenario,group=Scenario))+
+  ggplot(aes(Year,Sales,col=Scenario,group=Scenario))+
   geom_line(linewidth=1)+
   facet_wrap(~Powertrain,ncol=1,scales = "free_y")+
   labs(y="Sales \n [millions]",x="")+
@@ -63,13 +66,13 @@ f.fig.save(sprintf(fig_name,"scenarios"))
 
 ## By powertrain -----------
 
-scen="Baseline"
+scen="Ambitious"
 
 icct %>% 
   filter(Scenario==scen) %>% 
-  group_by(CY,Powertrain) %>% 
+  group_by(Year,Powertrain) %>% 
   reframe(Sales=sum(Sales)/1e6) %>% ungroup() %>% 
-  ggplot(aes(CY, Sales, fill = fct_rev(Powertrain))) +
+  ggplot(aes(Year, Sales, fill = fct_rev(Powertrain))) +
   geom_area() +
   labs(y="Sales \n [millions]",x="",fill="Powertrain",
        caption = paste0(scen," scenario"))+  
@@ -84,9 +87,9 @@ f.fig.save(sprintf(fig_name,paste0("powertrain_",scen)))
 
 icct %>% 
   filter(Scenario==scen) %>% 
-  group_by(CY,Powertrain,Vehicle) %>% 
+  group_by(Year,Powertrain,Vehicle) %>% 
   reframe(Sales=sum(Sales)/1e6) %>% ungroup() %>% 
-  ggplot(aes(CY, Sales, fill = fct_rev(Vehicle))) +
+  ggplot(aes(Year, Sales, fill = fct_rev(Vehicle))) +
   geom_area() +
   facet_wrap(~Powertrain,ncol=1,scales="free_y")+
   labs(y="Sales \n [millions]",x="",fill="Vehicle",
@@ -103,9 +106,9 @@ pt="BEV"
 
 icct %>% 
   filter(Scenario==scen,Powertrain==pt) %>% 
-  group_by(CY,Powertrain,Region) %>% 
+  group_by(Year,Powertrain,Region) %>% 
   reframe(Sales=sum(Sales)/1e6) %>% ungroup() %>% 
-  ggplot(aes(CY, Sales, fill = fct_rev(Region))) +
+  ggplot(aes(Year, Sales, fill = fct_rev(Region))) +
   geom_area() +
   facet_wrap(~Powertrain,ncol=1,scales="free_y")+
   labs(y="Sales \n [millions]",x="",fill="Region",
@@ -126,9 +129,9 @@ icct %>%
   filter(Scenario==scen,Powertrain==pt) %>% 
   mutate(Region=if_else(Region %in% regs,Region,"Rest of the World")) %>% 
   mutate(Region=factor(Region,levels=region_level)) %>% 
-  group_by(CY,Powertrain,Region,Vehicle) %>% 
+  group_by(Year,Powertrain,Region,Vehicle) %>% 
   reframe(Sales=sum(Sales)/1e6) %>% ungroup() %>% 
-  ggplot(aes(CY, Sales, fill = fct_rev(Vehicle))) +
+  ggplot(aes(Year, Sales, fill = fct_rev(Vehicle))) +
   geom_area() +
   facet_wrap(~Region)+
   labs(y="Sales \n [millions]",x="",fill="Vehicle type",
@@ -143,9 +146,9 @@ f.fig.save(sprintf(fig_name,paste0("veh_",scen,"_",pt)))
 # version 2
 icct %>% 
   filter(Scenario==scen,Powertrain==pt) %>% 
-  group_by(CY,Powertrain,Region,Vehicle) %>% 
+  group_by(Year,Powertrain,Region,Vehicle) %>% 
   reframe(Sales=sum(Sales)/1e6) %>% ungroup() %>% 
-  ggplot(aes(CY, Sales, fill = fct_rev(Region))) +
+  ggplot(aes(Year, Sales, fill = fct_rev(Region))) +
   geom_area() +
   facet_wrap(~Vehicle,scales="free_y")+
   labs(y="Sales \n [millions]",x="",fill="Region",
@@ -153,7 +156,10 @@ icct %>%
   coord_cartesian(expand=F)+
   scale_fill_manual(values = region_colors) +
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
-  theme(panel.spacing.x = unit(2, "cm"))
+  theme(panel.spacing.x = unit(0.2, "cm"),
+        legend.text = element_text(size=6),
+        legend.key.height= unit(0.25, 'cm'),
+        legend.key.width= unit(0.25, 'cm'))
 
 f.fig.save(sprintf(fig_name,paste0("veh_",scen,"_",pt,"2")))
 
@@ -162,10 +168,10 @@ f.fig.save(sprintf(fig_name,paste0("veh_",scen,"_",pt,"2")))
 icct %>% 
   filter(Scenario==scen,Powertrain==pt) %>% 
   filter(Vehicle %in% c("Two/Three Wheelers","Car")) %>% 
-  group_by(CY,Powertrain,Region,Country,Vehicle) %>% 
+  group_by(Year,Powertrain,Region,Country,Vehicle) %>% 
   mutate(Region=factor(Region,levels=region_level)) %>% 
   reframe(Sales=sum(Sales)) %>% ungroup() %>% 
-  ggplot(aes(CY, Sales, col = fct_rev(Region),group=Country)) +
+  ggplot(aes(Year, Sales, col = fct_rev(Region),group=Country)) +
   geom_line(linewidth=0.5) +
   facet_wrap(~Vehicle)+
   labs(y="Sales \n [millions]",x="",col="Region",

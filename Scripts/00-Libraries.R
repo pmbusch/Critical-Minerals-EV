@@ -70,4 +70,15 @@ region_colors <- c("United States" = "#1f78b4",
 resource_colors <- c("Brine" = "#0000FF33", "Hard Rock" = "#80008080",
                      "Volcano-Sedimentary" = "#FF000080")
 
+# Scenarios 
+scens_selected <- read_excel("Data/Selected_Scenarios.xlsx")
+scens_selected <- scens_selected$scen_all
+
+# Names of scenarios
+scens_names <- c("Reference","Bigger EVs - NMC811","Bigger EVs - Solid State",
+                 "Smaller EVs - LFP","Smaller EVs - Sodium",
+                 "Enhanced Reuse","Enhanced Recycling")
+
+
+
 # EoF
