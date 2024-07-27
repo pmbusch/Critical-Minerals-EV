@@ -47,6 +47,6 @@ mineral %>%
     # strip.background = element_rect(margin = margin(0, 0, 0.1, 0)),
     strip.text = element_text(angle=0,size=10,margin = margin()))
 
-f.fig.save("Figures/MinIntensity.png")
+f.fig.save("Figures/MinIntensity.png",h=12)
 
 # EoF

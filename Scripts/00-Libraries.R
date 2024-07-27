@@ -75,9 +75,23 @@ scens_selected <- read_excel("Data/Selected_Scenarios.xlsx")
 scens_selected <- scens_selected$scen_all
 
 # Names of scenarios
-scens_names <- c("Reference","Bigger EVs - NMC811","Bigger EVs - Solid State",
-                 "Smaller EVs - LFP","Smaller EVs - Sodium",
-                 "Enhanced Reuse","Enhanced Recycling")
+scens_names <- c("(1) Reference",
+                 "(2) High Capacity LIB","(3) Low Capacity LIB",
+                 "(4) NMC811 Adoption","(5) LFP Adoption",
+                 "(6) Solid State Adoption","(7) SIB Adoption",
+                 "(8) Enhanced Repurpose","(9) Enhanced Recycling")
+# Color
+scen_colors <- c(
+  "(1) Reference" = "#808080",
+  "(2) High Capacity LIB"="#0072B2",
+  "(3) Low Capacity LIB"="#56B4E9",
+  "(4) NMC811 Adoption" = "#D55E00",
+  "(5) LFP Adoption" = "#CC79A7",
+  "(6) Solid State Adoption" = "#E69F00",
+  "(7) SIB Adoption" = "#F0E442",
+  "(8) Enhanced Repurpose" = "#D62728",
+  "(9) Enhanced Recycling" = "#009E73"
+)
 
 
 

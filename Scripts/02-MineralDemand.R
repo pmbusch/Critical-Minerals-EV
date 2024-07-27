@@ -14,6 +14,7 @@ source("Scripts/01-ParametersDemand.R", encoding = "UTF-8")
 # Extended forecast towards 2070
 icct <- read.csv("Results/Intermediate Results/ICCT_demand.csv")
 icct <- icct %>% filter(Sales>0) # reduce computational time
+dict_region <- icct %>% group_by(Region,Country) %>% tally() %>% mutate(n=NULL)
 
 ## Battery size -----
 bat_ldv <- read.csv("Results/Intermediate Results/bat_size_chem_ldv.csv")
@@ -35,13 +36,22 @@ stationary_SIB$Vehicle <- "Stationary Power Storage"
 mineral <- read_excel("Data/Mineral_Intensity.xlsx",sheet = "BatPac")
 
 ## Reuse statistics from Survival Model -----
-reuse <- read.csv("Results/Intermediate Results/world_outflows_LIB.csv",
+reuse <- read.csv("Results/Intermediate Results/region_outflows_LIB.csv",
                   stringsAsFactors = FALSE)
 # Convert strings to vectors by year - Process the list column back into a list
 reuse <- reuse %>%
   mutate(LIB_recycling_vector = str_split(LIB_recycling_vector,"\\|") %>% lapply(as.numeric),
          LIB_Available_vector = str_split(LIB_Available_vector,"\\|") %>% lapply(as.numeric),
          add_LIB_vector = str_split(add_LIB_vector,"\\|") %>% lapply(as.numeric))
+
+# Metric LIB on avg per Car
+reuse %>% 
+  filter(Vehicle=="Car",Scenario=="Ambitious",Powertrain=="BEV",
+         scen_lifetime=="Baseline",Year<2051) %>% 
+  group_by(Region,Vehicle) %>% 
+  reframe(Sales=sum(Sales)/1e6,add_LIB=sum(add_LIB)/1e6) %>% 
+  mutate(metric=(Sales+add_LIB)/Sales) %>% arrange(desc(metric))
+
 
 ## Other sector demand -----
 otherSectors <- read.csv("Results/Intermediate Results/otherSector_demand.csv")
@@ -92,10 +102,11 @@ recycling_scen <- recycling_scenarios$recycling_scenario %>% unique()
 
 # results
 df_region_final <- c()
+df_country_final <- c() # slow, only for selected scenarios
 start_time <- proc.time()
 # debug
 # scen=scen_level[1];scen_chem=chems_scen[1];scen_bat=capacity_scen[1];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
-# scen=scen_level[3];scen_chem=chems_scen[1];scen_bat=capacity_scen[1];scen_life=lifetime_scen[2];scen_recyc=recycling_scen[2];
+# scen=scen_level[3];scen_chem=chems_scen[1];scen_bat=capacity_scen[1];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
 
 for (scen in scen_level){
   cat("Scenario ICCT: ",scen,"\n")
@@ -109,10 +120,10 @@ for (scen in scen_level){
             cat("        Recycling Scenario: ",scen_recyc,"\n")
           
           # all scenarios combined
-          # scen_all <- paste(scen,scen_chem,scen_bat,scen_life,scen_recyc, sep="-")
-          # if(!(scen_all %in% scens_selected)){ # RUN ONLY DESIRED SCENARIOS
-          #   next
-          # }
+          scen_all <- paste(scen,scen_chem,scen_bat,scen_life,scen_recyc, sep="-")
+          if(!(scen_all %in% scens_selected)){ # RUN ONLY DESIRED SCENARIOS
+            next
+          }
 
           df <- icct %>% 
             filter(Powertrain!="ICE") %>% 
@@ -178,7 +189,7 @@ for (scen in scen_level){
             # filter(Powertrain=="BEV") %>%
             filter(scen_lifetime==scen_life) %>% 
             filter(Scenario==scen) %>% 
-            dplyr::select(Year,perc_add_lib,add_LIB_vector,
+            dplyr::select(Region,Year,perc_add_lib,add_LIB_vector,
                           Powertrain,
                           perc_lib_available,LIB_Available_vector,
                           perc_lib_recycling,LIB_recycling_vector)
@@ -213,6 +224,7 @@ for (scen in scen_level){
           # THIS GIVES ME THE DESIRED KWH_VEH for each chemistry based on the past shares!!!
           bat_ldv_chem <- bat_ldv_chem %>% 
             mutate(join_dummy=1) %>% # to join expanding both dataframes
+            left_join(dict_region) %>% # add region
             # head() %>% 
             left_join(mutate(reuse_car,join_dummy=1),
                       relationship = "many-to-many") %>% 
@@ -425,11 +437,9 @@ for (scen in scen_level){
           names(otherSectors)
           
           # add region
-          region_dict <- df %>% group_by(Region,Country) %>% tally() %>% mutate(n=NULL)
-          otherSectors_loop <- otherSectors %>% left_join(region_dict) %>% 
+          otherSectors_loop <- otherSectors %>% left_join(dict_region) %>% 
             mutate(chemistry="Other Sectors",
                    Vehicle="Other Sectors",kwh_veh=0,kwh_required=0,kg_per_kwh=0,Sales=0)
-          rm(region_dict)
           df <- rbind(df,otherSectors_loop)
           
         # Save results at Region level
@@ -453,6 +463,22 @@ for (scen in scen_level){
         
         rm(df_region)
         
+        # Save results at Coutry level - SLOW!
+        df_country <- df %>% 
+          group_by(Year,Region,Country,Powertrain,Vehicle,chemistry,Mineral) %>% 
+          reframe(tons_mineral=sum(tons_mineral)) %>% ungroup()
+        nrow(df_country) # 
+        # add scenarios
+        df_country$Scenario <- scen
+        df_country$chem_scenario <- scen_chem  
+        df_country$capacity_scenario <- scen_bat
+        df_country$lifetime_scenario <- scen_life
+        df_country$recycling_scenario <- scen_recyc
+        # bind
+        df_country <- df_country %>% filter(abs(tons_mineral)>0)
+        df_country_final <- rbind(df_country_final,df_country)
+        rm(df_country)
+        
         }
       }
     }
@@ -462,8 +488,11 @@ rm(scen,scen_chem,scen_bat)
 end_time <- proc.time() # Capture the ending time
 print(end_time - start_time) # for 9 loops: 1 minute, 6 segs each
 # For 270 Loops: 24 minutes
+# 9 Scenarios with country level: 140 seg
 
 nrow(df_region_final)/1e6 # 22.6M rows
+nrow(df_country_final)/1e6 # 10.4M rows for 9 scenarios
+
 
 ## Save results -----
 # only selected scenarios
@@ -476,7 +505,14 @@ df_scen$scen_all %>% unique()
 write.csv(df_scen,"Results/MineralDemand_FewScenarios.csv",row.names = F)
 
 # all scenarios
-write.csv(df_region_final,"Results/MineralDemandRegion.csv",row.names = F)
+# write.csv(df_region_final,"Results/MineralDemandRegion.csv",row.names = F)
+
+df_country_final <- df_country_final %>% 
+  mutate(scen_all=paste(Scenario,chem_scenario,capacity_scenario,
+                        lifetime_scenario,recycling_scenario,sep="-"))
+write.csv(df_country_final,"Results/MineralDemand_FewScenarios_Country.csv",row.names = F)
+
+
 
 # write.csv(df,"Results/MineralDemand.csv",row.names = F)
 

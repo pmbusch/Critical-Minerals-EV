@@ -55,9 +55,12 @@ data_fig <- df_country %>%
   group_by(Resource_Type) %>%
   mutate(total_resources=sum(resource_all),
          share_resource=resource_all/sum(resource_all)) %>% 
-  mutate(r_label=if_else(resource_all>0.5,
+  mutate(r_label=if_else(resource_all>3,
                          paste0(Country,": ",format(round(resource_all,1),big.mark=","),"M"),"")) %>% 
-  mutate(r_label=if_else(resource_all<1 & Resource_Type=="Other","",r_label)) %>% 
+  mutate(r_label=if_else(resource_all<1 & Resource_Type=="Other","",r_label)) %>%
+  mutate(r_label_small=if_else(resource_all>0.5 &resource_all<3,
+                         paste0(Country,": ",format(round(resource_all,1),big.mark=","),"M"),"")) %>% 
+  mutate(c_order_lab=paste0(r_label,r_label_small)) %>% 
   ungroup() %>% mutate(share_type=total_resources/sum(resource_all)) %>% 
   mutate(Resource_Type=paste0(Resource_Type,"\n(",round(share_type*100,0),"%)"))
   
@@ -65,24 +68,26 @@ data_fig <- df_country %>%
 r_order <- data_fig %>% group_by(Resource_Type) %>% summarise(p=sum(resource_all)) %>%
   arrange(desc(p)) %>% pull(Resource_Type)
 data_fig <- data_fig %>% mutate(Resource_Type=factor(Resource_Type,levels=r_order))
-c_order <- data_fig %>% group_by(r_label) %>% summarise(p=sum(resource_all)) %>%
-  mutate(p=if_else(r_label=="",0,p)) %>% # no label at end
-  arrange(desc(p)) %>% pull(r_label)
-data_fig <- data_fig %>% mutate(r_label=factor(r_label,levels=c_order))
+c_order <- data_fig %>% group_by(c_order_lab) %>% summarise(p=sum(resource_all)) %>%
+  mutate(p=if_else(c_order_lab=="",0,p)) %>% # no label at end
+  arrange(desc(p)) %>% pull(c_order_lab)
+data_fig <- data_fig %>% mutate(c_order_lab=factor(c_order_lab,levels=c_order))
 
 sum(data_fig$resource_all)
 
 ggplot(data_fig,aes(x = Resource_Type, y = share_resource, 
-           width = total_resources,group=r_label,
+           width = total_resources,group=c_order_lab,
            fill = Resource_Type)) +
   geom_bar(stat = "identity", position = "fill", colour = "black")+
   geom_text(data=filter(data_fig,!str_detect(Resource_Type,"Other")),
-            aes(label = r_label), position = position_stack(vjust = 0.5),size=11*5/14 * 0.8) + 
+            aes(label = r_label), position = position_stack(vjust = 0.5),size=16*5/14 * 0.8) + 
+  # small label
+  geom_text(aes(label = r_label_small), position = position_stack(vjust = 0.5),size=11*5/14 * 0.8) + 
   geom_text(data=filter(data_fig,str_detect(Resource_Type,"Other")),
-            aes(label = r_label), position = position_stack(vjust = 0.5),angle=90,size=11*5/14 * 0.8) + 
+            aes(label = r_label), position = position_stack(vjust = 0.5),angle=90,size=16*5/14 * 0.8) + 
   facet_grid(~Resource_Type, scales = "free_x", space = "free_x") +
   scale_fill_manual(values=c(unname(resource_colors),"darkgrey"))+
-  theme_void(14)+
+  theme_void(17)+
   theme(legend.position="none",
         panel.spacing.x = unit(0, "npc")) # if no spacing preferred between bars
 f.fig.save(sprintf(url_fig,"Mosaic_Resource"),h=20,w=28)
@@ -117,11 +122,12 @@ f.curve <- function(data_curve,type="Reserves",index_title=""){
     geom_step(linewidth=0.75,direction = "hv")+
     geom_text_repel(aes(x=lab_pos,label=lab_dep),col="brown",nudge_y = 0.1*even_row,
                     size=6*5/14 * 0.8)+
-    labs(x=paste0("Cumulative ",type," [ktons Li]"),
-         y=index_title)+
+    labs(x=paste0("Cumulative ",type," [ktons Li]"),y="",
+         title=index_title)+
     coord_cartesian(xlim = c(0,lim_x),expand = F,ylim=c(0,1))+
     scale_y_continuous(labels = scales::comma_format(big.mark = ' '))+
-    scale_x_continuous(labels = scales::comma_format(big.mark = ' '))
+    scale_x_continuous(labels = scales::comma_format(big.mark = ' '))+
+    theme(axis.text.x = element_text(hjust = 1))
   
   return(p1)
   
@@ -147,7 +153,7 @@ data_fig <- df_country %>%
 
 p1 <- f.curve(data_fig,
               type = "Resources",
-              index_title = "Human Rights \nIndex [0-1]")
+              index_title = "Human Rights Index [0-1]")
 p1
 
 # f.fig.save(sprintf(url_fig,"Curve_HumanRight_reserve"),w = 18)
@@ -183,7 +189,7 @@ data_fig <- df_country %>%
 
 p1 <- f.curve(data_fig,
               type = "Resources",
-              index_title = "Ease of Doing \nBussiness \n[0-1]")
+              index_title = "Ease of Doing Business [0-1]")
 p1
 
 # f.fig.save(sprintf(url_fig,"Curve_EaseBusiness_reserve"),w = 18)
@@ -198,6 +204,11 @@ p1+geom_vline(data=filter(df_demand,Mineral=="Lithium"),
 # f.fig.save(sprintf(url_fig,"Curve_EaseBusiness_reserve_demand"),w = 18)
 f.fig.save(sprintf(url_fig,"Curve_EaseBusiness_resource_demand"),w = 18)
 
+
+
+
+
+
 ## USGS vs Li Database -----
 
 usgs_country <- read_excel("Data/USGS2024.xlsx",sheet="Lithium") %>% 
@@ -206,23 +217,23 @@ usgs_country <- read_excel("Data/USGS2024.xlsx",sheet="Lithium") %>%
 deposit_country <- deposit %>% 
   mutate(Country=if_else(Country %in% usgs_country$Country,Country,"Other countries")) %>%
   group_by(Country) %>% 
-  reframe(reserve=sum(reserve)/1e3,
-          resource_demostrated=sum(resource_demostrated+resource_inferred)/1e3) %>% ungroup()
-
+  reframe(resource_demostrated=sum(resource_demostrated+reserve)/1e3,
+          reserve=sum(reserve)/1e3) %>% ungroup()
+          
 usgs_reserve <- usgs_country %>% filter(Reserves>0) %>% pull(Country)
 
 # Comparison
 deposit_country <- deposit_country %>% left_join(usgs_country)
-names(deposit_country) <- c("Country","Reserve","Resource","USGS_Reserve","USGS_Resource")
+names(deposit_country) <- c("Country","Resource","Reserve","USGS_Reserve","USGS_Resource")
 deposit_country %>% 
   mutate(Country=factor(Country,levels=usgs_country$Country)) %>% 
   pivot_longer(c(-Country), names_to = "key", values_to = "value") %>% 
   mutate(type=str_extract(key,"Reserve|Resource")) %>% 
-  mutate(Source=if_else(type=="Resource","Demonstrated Resource",type)) %>% 
+  mutate(type=if_else(type=="Resource","Demonstrated Resource",type)) %>% 
   mutate(Source=if_else(str_detect(key,"USGS"),"USGS","Database"),key=NULL) %>% 
   mutate(label_text=paste0(round(value,1),""),lab_pos=value*1.1+0.5) %>% 
   # filter(type=="Reserve",Country %in% usgs_reserve) %>% 
-  filter(type=="Resource") %>% 
+  filter(str_detect(type,"Resource")) %>% 
   ggplot(aes(Country,value,fill=Source))+
   geom_col(position="dodge")+
   geom_text(aes(y=lab_pos,label=label_text), size=8*5/14 * 0.8,

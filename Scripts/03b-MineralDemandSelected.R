@@ -23,6 +23,12 @@ df$scen_all %>% unique()
 scens_selected
 df <- df %>% left_join(tibble(scen_all=scens_selected,name=scens_names))
 
+# Nickel cumulative demand
+df %>% 
+  filter(Mineral=="Nickel") %>% 
+  group_by(name,Powertrain) %>% 
+  reframe(ktons_cumDemand=sum(tons_mineral)/1e3)
+
 # Save Cumulative Demand -----------
 df_save <- df %>% group_by(name,Mineral) %>% 
   reframe(ktons_cumDemand=sum(tons_mineral)/1e3)
@@ -71,9 +77,9 @@ data_fig %>%
   facet_wrap(~Mineral,scales = "free_y")+
   labs(x="",y="",title="Mineral Demand [ktons]",col="Demand \nScenario")+
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
-  scale_y_continuous(labels = scales::comma_format(big.mark = ' '))+
+  scale_y_continuous(limits = c(0,NA),labels = scales::comma_format(big.mark = ' '))+
   theme(panel.spacing.x = unit(0.7, "cm"),
-        legend.text = element_text(size=8),
+        legend.text = element_text(size=10),
         legend.key.height= unit(0.25, 'cm'),
         legend.key.width= unit(0.25, 'cm'))
 
@@ -88,13 +94,17 @@ ggplot(data_fig)+
   coord_cartesian(expand=F)+
   labs(x="",y="",title="Lithium Demand [ktons]",col="Demand \nScenario")+
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
-  scale_y_continuous(labels = scales::comma_format(big.mark = ' '))+
+  scale_y_continuous(limits = c(0,NA),labels = scales::comma_format(big.mark = ' '))+
   theme(panel.spacing.x = unit(0.7, "cm"),
-        legend.text = element_text(size=8),
+        legend.text = element_text(size=10),
         legend.key.height= unit(0.25, 'cm'),
         legend.key.width= unit(0.25, 'cm'))
 
 f.fig.save(sprintf(fig_name,"Lithium"))
+
+
+
+
 
 
 # EoF

@@ -9,29 +9,37 @@ source("Scripts/Optimization/LoadDepositData.R", encoding = "UTF-8")
 url_fig <- "Figures/Deposit/%s.png"
 
 # Reserves
-sum(df$Reserve_Li_ktons,na.rm=T)/1e3 # 21.5 Mt
+sum(df$Reserve_Li_ktons,na.rm=T)/1e3 # 21.7 Mt
 # Resources Demonstrated (measured+indicated)
-sum(df$Resource_Li_ktons,na.rm = T)/1e3 # 57 Mt
+sum(df$Resource_Li_ktons,na.rm = T)/1e3 # 58 Mt
 # Resource inferred
-sum(df$Resource_Inferred_Li_ktons,na.rm = T)/1e3 # 68 Mt
+sum(df$Resource_Inferred_Li_ktons,na.rm = T)/1e3 # 71 Mt
 
 # REGRESSION MODELS ----------
 
 # For Now - reclassify resource types for generalization of costs
 table(df$Resource_Type)
-
 df <- df %>% 
   mutate(Resource_Type_orig=Resource_Type) %>% 
   mutate(Resource_Type=case_when(
     Resource_Type %in% c("Brine","Hard Rock","Volcano-Sedimentary") ~ Resource_Type,
-    Resource_Type %in% c("Other (Oilfield)") ~ "Brine",
+    Resource_Type %in% c("Other (Oilfield)","Other (Geothermal)") ~ "Brine",
     Resource_Type %in% c("Other (In Situ)") ~ "Hard Rock",
-    Resource_Type %in% c("Other (Volcanic Rock)","Other (Geothermal)") ~ "Volcano-Sedimentary"))
+    Resource_Type %in% c("Other (Volcanic Rock)") ~ "Volcano-Sedimentary"))
 
 
 ## Extraction Costs -------
 
+# Adjust for inflation towards 2022, using study year
+df <- df %>% 
+  mutate(USD_pertonne_Li=USD_pertonne_Li*Inflation_Multiplier_2022,
+         USD_pertonne_LCE=USD_pertonne_LCE*Inflation_Multiplier_2022,
+         Investment_original=Investment_original*Inflation_Multiplier_2022)
+
+
 # Brine
+# avg cost
+df %>% filter(Resource_Type_orig=="Brine") %>% reframe(x=mean(USD_pertonne_LCE,na.rm=T))
 # Really bad fit and not so many observations 
 mod_brine <- lm(USD_pertonne_Li~Grade_percLi_Reserve,
                 weights = Reserve_Li_ktons,
@@ -40,7 +48,8 @@ nobs(mod_brine)
 summary(mod_brine)
 coef_brine <- coefficients(mod_brine)
 r_squared <- summary(mod_brine)$r.squared
-
+eq_y <- paste0("Y = ",round(coef_brine[1]/5.323,0)," - ",
+               -round(coef_brine[2]/5.323/1e4,4)," * X")
 
 # Grade cost Brine
 df %>% 
@@ -49,13 +58,16 @@ df %>%
   mutate(Grade_reserve=Grade_percLi_Reserve*1e4) %>% 
   filter(!is.na(Reserve_Li_ktons),!is.na(Grade_reserve),!is.na(USD_pertonne_LCE)) %>% 
   ggplot(aes(Grade_reserve,USD_pertonne_LCE))+
-  geom_smooth(method="lm",se=F,col="darkred")+
+  geom_smooth(method="lm",se=F,
               # formula = "y~x+I(x^2)",
-              # aes(weight = Reserve_Li_ktons))+
+              aes(weight = Reserve_Li_ktons),
+              col="darkred")+
   geom_point(aes(col=Resource_Type,size=Reserve_Li_ktons))+
   geom_text_repel(aes(label=Deposit_Name),col="black",size=10*5/14 * 0.8)+
   annotate(geom="text",label=bquote(R^2==.( round(r_squared,2))),
-            x = 1e3, y = 5.5e3 , size = 10*5/14 * 0.8, color = "black") +  
+            x = 1e3, y = 5.1e3 , size = 10*5/14 * 0.8,hjust=0 ,color = "black") +  
+  annotate("text", label=eq_y,
+           x = 1e3, y = 5.3e3, size = 10*5/14 * 0.8,hjust=0 ,color = "black")+
   labs(y="Extraction Cost \n[USD/t LCE]",
        x="Grade Li [mg/L]",
        col="",size="Reserve [ktons Li]")+
@@ -71,13 +83,17 @@ df %>%
 f.fig.save(sprintf(url_fig,"RegCost_Brine"))
 
 # Hard Rock
+# avg cost
+df %>% filter(Resource_Type_orig=="Hard Rock") %>% reframe(x=mean(USD_pertonne_LCE,na.rm=T))
 mod_rock <- lm(USD_pertonne_Li~Grade_percLi_Reserve,
-               # weights = Reserve_Li_ktons,
+               weights = Reserve_Li_ktons,
                data=filter(df,Resource_Type_orig=="Hard Rock"))
 nobs(mod_rock)
 summary(mod_rock)
 coef_rock <- coefficients(mod_rock)
 r_squared <- summary(mod_rock)$r.squared
+eq_y <- paste0("Y = ",round(coef_rock[1]/5.323,0)," - ",
+               -round(coef_rock[2]/5.323/2.153,0)," * X")
 
 
 # Grade cost Hard rock
@@ -87,11 +103,14 @@ df %>%
   mutate(Grade_reserve=Grade_percLi_Reserve*2.153) %>% 
   filter(!is.na(Reserve_Li_ktons),!is.na(Grade_reserve),!is.na(USD_pertonne_LCE)) %>% 
   ggplot(aes(Grade_reserve,USD_pertonne_LCE))+
-  geom_smooth(method="lm",se=F,col="darkred")+
-              # aes(weight = Reserve_Li_ktons))+
+  geom_smooth(method="lm",se=F,
+              aes(weight = Reserve_Li_ktons),
+              col="darkred")+
   geom_point(aes(col=Resource_Type,size=Reserve_Li_ktons))+
   annotate(geom="text",label=bquote(R^2==.( round(r_squared,2))),
-           x = 1.5, y = 10e3 , size = 10*5/14 * 0.8, color = "black") +
+           x = 1.2, y = 11.7e3 , size = 10*5/14 * 0.8,hjust=0 ,color = "black") +
+  annotate("text", label=eq_y,
+           x = 1.2, y =12e3, size = 10*5/14 * 0.8,hjust=0 ,color = "black")+
   geom_text_repel(aes(label=Deposit_Name),col="black",size=10*5/14 * 0.8)+
   labs(y="Extraction Cost \n[USD/t LCE]",
        x=expression(paste("Grade Li"[2],"O%")),
@@ -149,7 +168,7 @@ f.fig.save(sprintf(url_fig,"RegCost_Volcano"))
 # cost per tpa 
 df %>% 
   filter(Production_Li_ktons>0, Investment_original>0) %>% 
-  mutate(cost_tpa=Investment_original/Production_Li_ktons*1e3) %>%  # USD per ton per year Li in capacity
+  mutate(cost_tpa=Investment_original/Production_Li_ktons*1e3/5.323) %>%  # USD/tpa LCE in capacity
   group_by(Resource_Type) %>% 
   dplyr::select(cost_tpa,Resource_Type) %>% 
   skimr::skim_without_charts()
@@ -159,13 +178,15 @@ df %>%
 # Intercept favor economies of scale
 
 mod_cap_brine <- lm(Investment_original~Production_Li_ktons,
-                    # weights = Reserve_Li_ktons,
+                    weights = Reserve_Li_ktons,
                     data=filter(df,
                                 # Production_Li_ktons<20, # no atacama
                                 Resource_Type_orig=="Brine"))
 nobs(mod_cap_brine)
 summary(mod_cap_brine) # Coefficients are in Million USD per kton, or multiply by 1000 to get USD per ton
 r_squared <- summary(mod_cap_brine)$r.squared
+eq_y <- paste0("Y = ",round(coef(mod_cap_brine)[1],0)," + ",
+               round(coef(mod_cap_brine)[2],0)," * X")
 
 
 # Production vs Investment
@@ -174,12 +195,15 @@ df %>%
   filter(Investment_original>0,Production_Li_ktons>0,Reserve_Li_ktons>0) %>% 
   # filter(Production_Li_ktons<20) %>% # No atacama 
   ggplot(aes(Production_Li_ktons,Investment_original))+
-  geom_smooth(method="lm",se=F,col="darkgreen")+
+  geom_smooth(method="lm",
               # formula = "y~x+I(x^2)",
-              # aes(weight=Reserve_Li_ktons))+
+              aes(weight=Reserve_Li_ktons),
+              se=F,col="darkgreen")+
   geom_point(aes(col=Resource_Type,size=Reserve_Li_ktons))+
   annotate(geom="text",label=bquote(R^2==.( round(r_squared,2))),
-           x = 20, y = 2e3 , size = 10*5/14 * 0.8, color = "black") +  
+           x = 18, y = 2e3 , size = 10*5/14 * 0.8,hjust=0 ,color = "black") +  
+  annotate("text", label=eq_y,
+           x = 18, y = 2.2e3, size = 10*5/14 * 0.8,hjust=0 ,color = "black")+
   geom_text_repel(aes(label=Deposit_Name),col="black",size=10*5/14 * 0.8)+
   labs(x="Production [ktons Li per year]",y="Investment \n [USD Million]",
        col="Resource \ntype",size="Reserve [ktons Li]")+
@@ -195,13 +219,15 @@ f.fig.save(sprintf(url_fig,"Investment_costProd_Brine"))
 
 
 mod_cap_rock <- lm(Investment_original~Production_Li_ktons,
-                   # weights = Reserve_Li_ktons,
+                   weights = Reserve_Li_ktons,
                    data=filter(df,
                                # Production_Li_ktons<60, # no Mt Holland
                                Resource_Type_orig=="Hard Rock"))
 nobs(mod_cap_rock)
 summary(mod_cap_rock)
 r_squared <- summary(mod_cap_rock)$r.squared
+eq_y <- paste0("Y = ",round(coef(mod_cap_rock)[1],0)," + ",
+               round(coef(mod_cap_rock)[2],0)," * X")
 
 
 # Production vs Investment
@@ -210,12 +236,15 @@ df %>%
   # filter(Production_Li_ktons<60) %>%  # no Mt Holland
   filter(Investment_original>0,Production_Li_ktons>0,Reserve_Li_ktons>0) %>% 
   ggplot(aes(Production_Li_ktons,Investment_original))+
-  geom_smooth(method="lm",se=F,col="darkgreen")+
+  geom_smooth(method="lm",
               # formula = "y~x+I(x^2)",
-              # aes(weight=Reserve_Li_ktons))+
+              aes(weight=Reserve_Li_ktons),
+              se=F,col="darkgreen")+
   geom_point(aes(col=Resource_Type,size=Reserve_Li_ktons))+
   annotate(geom="text",label=bquote(R^2==.( round(r_squared,2))),
-           x = 20, y = 1200 , size = 10*5/14 * 0.8, color = "black") +  
+           x = 18, y = 1200 , size = 10*5/14 * 0.8,hjust=0, color = "black") +  
+  annotate("text", label=eq_y,
+           x = 18, y = 1300, size = 10*5/14 * 0.8,hjust=0 ,color = "black")+
   geom_text_repel(aes(label=Deposit_Name),col="black",size=10*5/14 * 0.8)+
   labs(x="Production [ktons Li per year]",y="Investment \n [USD Million]",
        col="Resource \ntype",size="Reserve [ktons Li]")+
@@ -433,7 +462,6 @@ ggplot(data_fig,aes(reserve_cum_start,USD_pertonne_LCE,col=Resource_Type,group=1
 f.fig.save(sprintf(url_fig,"CostCurve"),w = 18)
 
 
-
 ## Atacama Cost Curve -----------
 
 # Load atacama
@@ -595,16 +623,37 @@ df %>% reframe(Reserves=sum(reserve,na.rm=T)/1e3,
                Resources_Inferred=sum(resource_inferred,na.rm=T)/1e3,
                all_resource=sum(all_resource,na.rm=T)/1e3)
 
-# Max Production Rate ---------
-# 5% max depletion rate for hard rock and 3% for others
+# Share of resource
+df %>% 
+  filter(resource_demostrated>0,resource_inferred>0) %>% 
+  group_by(Resource_Type) %>% 
+  reframe(dem=sum(resource_demostrated),
+          infe=sum(resource_inferred)) %>% ungroup() %>% 
+  mutate(share=dem/(dem+infe))
 
+# just 37M
+df %>% filter(resource_demostrated==0,resource_inferred>0) %>% 
+  pull(resource_inferred) %>% sum()/1e3
+
+
+# Max Production Rate ---------
+# 5% max depletion rate for hard rock and 3% for others (DLE) and 
+# 1% for evaporation
 dep_rate <- tibble(Resource_Type=unique(df$Resource_Type)) %>% 
-  mutate(dep_rate=if_else(Resource_Type=="Hard Rock",0.05,0.02))
+  mutate(dep_rate=case_when(
+    Resource_Type=="Hard Rock" ~ 0.05,
+    Resource_Type=="Brine" ~ 0.01,
+    T ~ 0.03))
+dep_rate$dle=F
+(dep_rate <- rbind(dep_rate,tibble(Resource_Type="Brine",
+                                   dep_rate=0.03,dle=T)))
+
 
 # Max production rate based on all existing resources
 df <- df %>% 
   left_join(dep_rate) %>% 
   mutate(max_prod_rate=all_resource*dep_rate)
+
 
 # Max Ramp Up ----------
 # 4 years
@@ -640,16 +689,20 @@ ggplot(df,aes(cost1,fill=Resource_Type))+geom_density(alpha=.4)
 (cost_avg <- df %>% group_by(Resource_Type) %>% 
   reframe(avg_cost1=quantile(cost1,0.75,na.rm=T),
           avg_cost2=quantile(cost1,0.9,na.rm=T)-avg_cost1,
-          avg_cost3=quantile(cost1,0.99,na.rm=T)-avg_cost1))
+          avg_cost3=quantile(cost1,0.99,na.rm=T)-avg_cost1,
+          max_cost=max(cost1,na.rm = T)-avg_cost1))
 
+
+# Sample from quantile to upper tail
+# Why sample: to avoid tipping point with same values of costs
+set.seed(13062024)
 # Use quantile 
 df <- df %>% 
   left_join(cost_avg) %>% 
   # USD/ton Li
   mutate(cost1=if_else(is.na(cost1),
-                       avg_cost1+runif(nrow(df))*100, # random to avoid ties
+                       EnvStats::rtri(nrow(df),min=avg_cost1,max=avg_cost1+avg_cost2,mode=avg_cost1+1), # triangular distribution
                        cost1))
-
 
 ggplot(df,aes(cost1,col=Resource_Type))+stat_ecdf()+coord_flip()
 
@@ -676,7 +729,8 @@ df <- df %>%
   dplyr::select(-avg_cost1) %>% 
   # left_join(cost_avg2) %>% 
   mutate(cost2=if_else(is.na(cost2),
-                       avg_cost2+cost1+runif(nrow(df))*100,
+                       cost1+EnvStats::rtri(nrow(df),min=avg_cost2,max=avg_cost3,mode=avg_cost2+1),
+                       # avg_cost2+cost1+runif(nrow(df))*100,
                        cost2))
 
 ggplot(df,aes(cost2,col=Resource_Type))+stat_ecdf()
@@ -701,7 +755,8 @@ df <- df %>%
   dplyr::select(-avg_cost2) %>% 
   # left_join(cost_avg3) %>% 
   mutate(cost3=if_else(is.na(cost3),
-                       avg_cost3+cost1+runif(nrow(df))*100,
+                       cost1+EnvStats::rtri(nrow(df),min=avg_cost3,max=max_cost,mode=avg_cost3+1),
+                       # avg_cost3+cost1+runif(nrow(df))*100,
                        cost3)) %>% 
   dplyr::select(-avg_cost3)
 
@@ -710,6 +765,58 @@ ggplot(df,aes(cost3,col=Resource_Type))+stat_ecdf()
 # Last check up
 df %>% filter(cost1>cost2) %>% nrow()
 df %>% filter(cost2>cost3) %>% nrow()
+
+## Royalties ----------
+royalty <- read_excel("Data/Royalty.xlsx",sheet="Royalty") %>% 
+  mutate(Royalty_Rate=as.numeric(Royalty_Rate)) %>% 
+  mutate(State=Country)
+
+tax <- royalty %>% dplyr::select(Country,Corporate_Tax_Rate)
+royalty <- royalty %>% dplyr::select(State,Royalty_Rate,Royalty_Based)
+
+# LCE price assumtpion
+li_price <- 20000*5.323 # per ton Li
+
+df <- df %>% 
+  mutate(State=if_else(is.na(State),Country,State)) %>% 
+  left_join(royalty) %>% 
+  mutate(royalty=case_when(
+    Royalty_Based=="Unit" & Country=="France" ~ 62.5*1.0538*2.153, # France, 62.5 Euro/t Li2O
+    Royalty_Based=="Unit" & Country=="United Kingdom" ~ 2.03/grade_resource_inferred*100*1.24, # UK, 2.03 $pounds/ ton ore rock
+    State=="California" ~ Royalty_Rate*5.323, # per ton LCE
+    State=="Arkansas" ~  Royalty_Rate*(1/240*1e9)*2.153, # on avg, 240 mg Li2O per Liter 
+    Royalty_Based=="Revenue" ~ li_price*Royalty_Rate,
+    Royalty_Based=="Profit" ~ (li_price-cost1)*Royalty_Rate,
+    T ~ 0)) %>% 
+  left_join(tax) %>% 
+  mutate(tax_cost=(li_price-cost1)*Corporate_Tax_Rate)
+
+df %>% 
+  # filter(Country=="United States") %>% 
+  dplyr::select(Resource_Type,Deposit_Name,cost1,royalty,tax_cost) %>% 
+  pivot_longer(c(cost1,royalty,tax_cost), names_to = "key", values_to = "value") %>% 
+  mutate(value=value/5.323) %>% 
+  ggplot(aes(reorder(Deposit_Name,value),value,fill=key))+
+  geom_col()+
+  facet_grid(Resource_Type~.,scales = "free_y",space = "free_y")+
+  coord_flip(expand = F,ylim = c(0,NA))+
+  labs(x="",y="Extraction Cost [USD/ton LCE]",fill="")+
+  guides(fill= guide_legend(reverse = TRUE))+
+  theme(legend.position = "bottom")
+  
+# for cost 2 and cost 3
+df <- df %>% 
+  mutate(cost1=cost1+royalty+tax_cost) %>% 
+  mutate(royalty2=if_else(Royalty_Based=="Profit",
+                          (li_price-cost2)*Royalty_Rate,
+                          royalty),
+         tax_cost2=(li_price-cost2)*Corporate_Tax_Rate,
+         cost2=cost2+royalty2+tax_cost2,
+         royalty3=if_else(Royalty_Based=="Profit",
+                          (li_price-cost3)*Royalty_Rate,
+                          royalty),
+         tax_cost3=(li_price-cost3)*Corporate_Tax_Rate,
+         cost3=cost3+royalty3+tax_cost3)
 
 
 # Expansion Costs ----------
@@ -723,7 +830,8 @@ df %>% filter(cost2>cost3) %>% nrow()
    mutate(var=str_remove_all(var,"\\(|\\)"),
           var=paste0("cExp_",var)) %>% 
    pivot_wider(names_from = var, values_from = coef))
-coefs_exp[3,2] <- 150 # for Volcano
+# df %>% filter(Resource_Type_orig=="Volcano-Sedimentary") %>% reframe(x=mean(Investment_original,na.rm=T))
+coefs_exp[3,2] <- 250 # for Volcano
 
 df <- df %>% 
   left_join(coefs_exp) %>% 
@@ -731,58 +839,119 @@ df <- df %>%
   # mutate(resource=Resource_Li_ktons) %>% 
   # mutate(cost_expansion=exp((resource-reserve)/resource)*cost_extraction)
 
+
+
+# Current production rate -----
+# USGS 2022 and 2023 production data by country
+(usgs <- read_excel("Data/USGS2024.xlsx",
+                    sheet="Production_Li",range = "A1:C17") %>% 
+   mutate(Year=paste0("prod_rate",Year)) %>% 
+   mutate(USGS_production=USGS_production/1e3) %>% # to ktons
+   pivot_wider(names_from = Year, values_from = USGS_production))
+
+
+# Give to open mines in countries - shares of 2025 capacity
+table(df$Status_RFCAmbrian)
+# only to opend or under construction mines
+status_prodRates <- c("Current Lithium Mines","Under Construction")
+df <- df %>% 
+  mutate(Prod2025_Li_ktons_Ambrian=if_else(
+    Status_RFCAmbrian %in% status_prodRates,Prod2025_Li_ktons_Ambrian,0),
+    Prod2030_Li_ktons_Ambrian=if_else(
+      Status_RFCAmbrian %in% status_prodRates,Prod2030_Li_ktons_Ambrian,0))
+
+# producing mines
+share_pr <- df %>% 
+  filter(Prod2025_Li_ktons_Ambrian>0) %>%
+  filter(Status=="Producing") %>%
+  group_by(Country) %>% 
+  mutate(share_prod=Prod2025_Li_ktons_Ambrian/sum(Prod2025_Li_ktons_Ambrian)) %>% 
+  ungroup() %>% 
+  dplyr::select(Deposit_Name,share_prod)
+
+
+# divide into mines open
+df <- df %>% 
+  left_join(usgs) %>% 
+  left_join(share_pr) %>% 
+  # be aware of NAs
+  mutate(Prod2025_Li_ktons_Ambrian=if_else(is.na(Prod2025_Li_ktons_Ambrian),
+                                           0,Prod2025_Li_ktons_Ambrian),
+         Prod2030_Li_ktons_Ambrian=if_else(is.na(Prod2030_Li_ktons_Ambrian),
+                                           0,Prod2030_Li_ktons_Ambrian),
+         prod_rate2022=prod_rate2022*share_prod,
+         prod_rate2022=if_else(is.na(prod_rate2022),0,prod_rate2022),
+         prod_rate2023=prod_rate2023*share_prod,
+         prod_rate2023=if_else(is.na(prod_rate2023),0,prod_rate2023),
+         prod_rate2025=if_else(Prod2025_Li_ktons_Ambrian>prod_rate2023,
+                               Prod2025_Li_ktons_Ambrian,prod_rate2023),
+         prod_rate2030=if_else(Prod2030_Li_ktons_Ambrian>prod_rate2023,
+                               Prod2030_Li_ktons_Ambrian,prod_rate2023))
+sum(df$prod_rate2022,na.rm = T)
+sum(df$prod_rate2023,na.rm = T)
+sum(df$prod_rate2025,na.rm = T)
+sum(df$prod_rate2030,na.rm = T)
+
+
 # Opening Costs -----
 
 # Intercept
 table(df$Status)
+table(df$Status_RFCAmbrian)
 table(df$open_mine)
 df <- df %>% 
   mutate(cost_opening=case_when(
     open_mine==T ~ 0, # if producing or in construction then 0, investment is already commited
+    Status_RFCAmbrian %in% status_prodRates ~ 0,
     T ~ cExp_Intercept*1e6)) # in USD
 
 # Status to delay mines
 df <- df %>% 
   mutate(Status_Delay=case_when(
+    Status=="Construction" ~ "Construction", 
     open_mine==T ~ "Open",
     !is.na(Status) ~ "Evaluation",
     T ~ "No Info"))
 table(df$Status_Delay)
 
-# Current production rate -----
-# Give to open mines in countries
-country_prod <- tibble(Country=c("Argentina","Australia","Bolivia","Brazil",
-                                 "Canada","Chile","DR Congo","Mali","Mexico",
-                                 "United States","Zimbabwe"),
-                       prod_rate=c(6.6,74.7,0,2.6, # from USGS 2024, prod 2022, USA not disclosed
-                                   0.5,38,0,0,0,
-                                   0,1))
-# equally divide into mines open
-country_prod <- df %>% 
-  filter(Status=="Producing") %>% 
-  group_by(Country,Deposit_Name) %>% tally() %>% 
-  ungroup() %>% group_by(Country) %>% 
-  mutate(total_country=sum(n)) %>% left_join(country_prod) %>% 
-  mutate(prod_rate=prod_rate/total_country, n=NULL,total_country=NULL)
-
-df <- df %>% left_join(country_prod) %>% 
-  mutate(prod_rate=if_else(is.na(prod_rate),0,prod_rate))
-sum(df$prod_rate)
 
 # Fix issue that current production rate should be less or equal to max prod rate.
-df <- df %>% mutate(max_prod_rate=if_else(max_prod_rate>prod_rate,max_prod_rate,prod_rate))
+df <- df %>%
+  ungroup() %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2022,max_prod_rate,prod_rate2022)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2023,max_prod_rate,prod_rate2023)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2025,max_prod_rate,prod_rate2025)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2030,max_prod_rate,prod_rate2030))
+  
+
+df <- df %>% mutate(max_ramp_up=max_prod_rate/4)
+
 
 # Filter only deposits with actual reserves
 df <- df %>% filter(reserve+resource_demostrated+resource_inferred>0)
 
 
+# Non Monetary Index ----------
+
+## Ease of Doing Business
+edb <- read_excel("Data/EDB.xlsx",
+                  sheet="Easy of Doing Business")
+names(edb) <- c("Country","edb")
+
+# add by country
+df <- df %>% left_join(edb) %>% 
+  # mutate(edb=if_else(open_mine==T,100,edb)) %>%  # if opened, no cost
+  mutate(edb=100-edb) # from 0 (better) to 100, to minimize
+
 # save -----
 # Select only required columns
 df <- df %>% dplyr::select(Country,Deposit_Name,Resource_Type,Latitude,Longitude,
                            Status,Status_Delay,Grade_percLi_Reserve,grade_resource,grade_resource_inferred,
-                           open_mine,reserve,resource_demostrated,resource_inferred,
+                           open_mine,reserve,resource_demostrated,resource_inferred,all_resource,
                            cost1,cost2,cost3,max_prod_rate,max_ramp_up,cost_expansion,
-                           cost_opening,prod_rate,Resource_Type_orig)
+                           cost_opening,
+                           prod_rate2022,prod_rate2023,prod_rate2025,prod_rate2030,
+                           Resource_Type_orig,edb)
 # arrange
 df <- df %>% arrange(desc(reserve))
 # add rownames
@@ -792,9 +961,93 @@ df$d <- as.numeric(df$d)
 head(df)
 write.csv(df,"Parameters/Deposit.csv",row.names = F)
 
+# Scenarios Save ------
+url_scen <- "Parameters/Deposit_scenarios/%s.csv"
+df_orig <- df
+
+## Ramp up -----
+# No ramp up
+df <- df_orig %>% mutate(max_ramp_up=max_prod_rate)
+write.csv(df,sprintf(url_scen,"NoRampUp"),row.names = F)
+
+# 2 years
+df <- df_orig %>% mutate(max_ramp_up=max_prod_rate/2)
+write.csv(df,sprintf(url_scen,"2yRampUp"),row.names = F)
+
+# 8 years
+df <- df_orig %>% mutate(max_ramp_up=max_prod_rate/8)
+write.csv(df,sprintf(url_scen,"8yRampUp"),row.names = F)
+
+## Max Prod Rates -----
+
+# All 5% depletion rate
+df <- df_orig %>% mutate(max_prod_rate=all_resource*0.05)
+# Ensure current prod rate are ok
+df <- df %>%
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2022,max_prod_rate,prod_rate2022)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2023,max_prod_rate,prod_rate2023)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2025,max_prod_rate,prod_rate2025)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2030,max_prod_rate,prod_rate2030))
+df <- df %>% mutate(max_ramp_up=max_prod_rate/4)
+write.csv(df,sprintf(url_scen,"5_prodRate"),row.names = F)
+
+# All 2% depletion rate or 100K
+df <- df_orig %>% mutate(max_prod_rate=all_resource*0.02)
+# Ensure current prod rate are ok
+df <- df %>%
+  mutate(max_prod_rate=if_else(max_prod_rate>100,100,max_prod_rate)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2022,max_prod_rate,prod_rate2022)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2023,max_prod_rate,prod_rate2023)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2025,max_prod_rate,prod_rate2025)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2030,max_prod_rate,prod_rate2030))
+df <- df %>% mutate(max_ramp_up=max_prod_rate/4)
+write.csv(df,sprintf(url_scen,"2_prodRate"),row.names = F)
+
+# All DLE - 3% depletion rate
+df <- df_orig %>% mutate(max_prod_rate=all_resource*case_when(
+  Resource_Type=="Hard Rock" ~ 0.05,
+  T ~ 0.03))
+# Ensure current prod rate are ok
+df <- df %>%
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2022,max_prod_rate,prod_rate2022)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2023,max_prod_rate,prod_rate2023)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2025,max_prod_rate,prod_rate2025)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2030,max_prod_rate,prod_rate2030))
+df <- df %>% mutate(max_ramp_up=max_prod_rate/4)
+write.csv(df,sprintf(url_scen,"AllDLE_prodRate"),row.names = F)
+
+# NO DLE
+df <- df_orig %>% mutate(max_prod_rate=all_resource*case_when(
+  Resource_Type=="Hard Rock" ~ 0.05,
+  Resource_Type=="Brine" ~ 0.01,
+  T ~ 0.03))
+# Ensure current prod rate are ok
+df <- df %>%
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2022,max_prod_rate,prod_rate2022)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2023,max_prod_rate,prod_rate2023)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2025,max_prod_rate,prod_rate2025)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2030,max_prod_rate,prod_rate2030))
+df <- df %>% mutate(max_ramp_up=max_prod_rate/4)
+write.csv(df,sprintf(url_scen,"noDLE_prodRate"),row.names = F)
+
+## Just Demostrated Resources -----
+df <- df_orig %>% 
+  mutate(dep_rate=max_prod_rate/all_resource) %>% 
+  mutate(resource_inferred=0,
+         all_resource=reserve+resource_demostrated,
+         max_prod_rate=all_resource*dep_rate,dep_rate=NULL)
+# Ensure current prod rate are ok
+df <- df %>%
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2022,max_prod_rate,prod_rate2022)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2023,max_prod_rate,prod_rate2023)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2025,max_prod_rate,prod_rate2025)) %>% 
+  mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2030,max_prod_rate,prod_rate2030))
+df <- df %>% mutate(max_ramp_up=max_prod_rate/4)
+write.csv(df,sprintf(url_scen,"NoInferredResources"),row.names = F)
+
 
 # Figure all Curve Costs --------------
-
+df <- df_orig
 data_fig <- df %>% 
   dplyr::select(Deposit_Name,Resource_Type,reserve,resource_demostrated,resource_inferred,
                 cost1,cost2,cost3) %>% 
@@ -840,7 +1093,7 @@ ggplot(data_fig,aes(reserve_cum_start,cost,col=Resource_Type,group=1))+
   scale_alpha_manual(values = c("Stage 1" = 1, "Stage 2" = 0.6,"Stage 3"=0.3)) +
   scale_y_continuous(labels = scales::comma_format(big.mark = ' ',prefix = "$"))+
   scale_x_continuous(labels = scales::comma_format(big.mark = ' '))+
-  theme(legend.position = c(0.25,0.7),
+  theme(legend.position = c(0.7,0.25),
         legend.box = "horizontal",
         axis.text.x = element_text(hjust = 1),
         axis.title.y=element_text(angle=0,margin=margin(r = -105,l=50),vjust = 0.95),

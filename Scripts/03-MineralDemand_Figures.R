@@ -31,6 +31,7 @@ df <- df %>% mutate(scen_all=paste(Scenario,chem_scenario,
 df$scen_all %>% unique()
 
 
+
 # summary
 df %>% 
   # filter(Vehicle=="Stationary Power Storage") %>%
@@ -56,7 +57,7 @@ df %>%
 # ratio 2050 to 2022 - ranges
 df %>% 
   filter(Year %in% c(2022,2050)) %>% 
-  filter(Mineral %in% min_interest) %>% 
+  filter(Mineral %in% min_interest3) %>% 
   group_by(scen_all,Year,Mineral) %>% 
   summarise(kton=sum(tons_mineral)/1e3) %>% 
   pivot_wider(names_from = Year, values_from = kton) %>% 
@@ -92,17 +93,42 @@ df %>%
 
 # by scenario, million tons
 df %>% 
-  filter(Mineral %in% min_interest) %>% 
+  filter(Mineral %in% min_interest2) %>% 
   group_by(scen_all,Mineral) %>% 
   summarise(Mton=sum(tons_mineral)/1e6) %>% 
   pivot_wider(names_from = Mineral, values_from = Mton)
 
 # ranges
 df %>% 
-  filter(Mineral %in% min_interest) %>% 
+  filter(Mineral %in% min_interest3) %>% 
   group_by(scen_all,Mineral) %>% 
   summarise(Mton=sum(tons_mineral)/1e6) %>% ungroup() %>% 
   group_by(Mineral) %>% summarise(min_Mton=min(Mton),max_Mton=max(Mton))
+
+## Recycling --------
+
+# Recycling cumulative demand
+df %>% 
+  filter(Mineral=="Lithium") %>% 
+  filter(Vehicle=="Recycling") %>% 
+  group_by(scen_all) %>% 
+  reframe(million_tons=-sum(tons_mineral)/1e6)
+
+# Recycling "Capacity" at 2050 
+df %>% 
+  filter(Vehicle=="Recycling") %>%
+  filter(Year==2050) %>% 
+  filter(Mineral=="Lithium") %>% 
+  group_by(scen_all) %>% 
+  reframe(ktons=-sum(tons_mineral)/1e3)
+
+df %>% 
+  filter(Mineral=="Lithium") %>% 
+  filter(Vehicle=="Recycling") %>% 
+  group_by(scen_all,Year) %>% 
+  reframe(ktons=-sum(tons_mineral)/1e3) %>% 
+  ggplot(aes(Year,ktons,col=scen_all))+geom_line()
+
 
 
 # Figures -----
