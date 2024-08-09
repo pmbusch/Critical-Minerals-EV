@@ -680,6 +680,18 @@ df <- df %>% dplyr::select(Country,Deposit_Name,Resource_Type,Latitude,Longitude
 df <- df %>% rownames_to_column() %>% rename(d=rowname)
 df$d <- as.numeric(df$d)
 
+
+# Names selection - for map
+head(df)
+df <- df %>% 
+  mutate(label_name=if_else(all_resource>1000,Deposit_Name,"")) %>% 
+  mutate(label_name=if_else(all_resource>1000,Deposit_Name,"")) %>% 
+  mutate(label_name=if_else(str_detect(Deposit_Name,"Arcadia|Goulamina|Zinnwald|Carolina|LANXESS|Xuxa|Volta|Ostroboth")
+                            ,Deposit_Name,label_name)) %>% 
+  mutate(label_name=if_else(str_detect(label_name,"Albemarle"),"",label_name)) %>% 
+  mutate(label_name=label_name %>% 
+  str_remove_all(" \\(All\\)| \\(All Projects\\)| \\(Century\\)| \\(SQM\\)"))
+
 head(df)
 write.csv(df,"Parameters/Deposit.csv",row.names = F)
 

@@ -67,6 +67,8 @@ p2 <- ggplot(data_fig,aes(reserve_cum_start,cost,group=1))+
   geom_step(linewidth=0.75,direction = "hv",alpha=0.7,
             aes(col=Resource_Type))+
   geom_text_repel(aes(x=lab_pos,label=lab_dep),col="black",alpha=.9,
+                  min.segment.length = 0.1,
+                  segment.color = "darkgrey", segment.size = 0.3,
                   nudge_y = 1000*even_row,size=7*5/14 * 0.8)+
   labs(x="Cumulative Resources [ktons Li]",y="Extraction Cost\n[USD/ton LCE]",
        title="(C) Lithium Cumulative Availability Curve",
@@ -111,7 +113,7 @@ for (i in length(scens_names):1){
 }
 p2a
 
-# Save with widht size of letter
+# Save with width size of letter
 ggsave("Figures/Article/Fig2b.png", ggplot2::last_plot(),
        units="cm",dpi=600,
        width=18.4,height=6.2)
@@ -137,6 +139,10 @@ countries <- data_fig %>% filter(res>0.5) %>%
     Country=="Czech Republic" ~"Czechia-Serbia",
     Country=="Mexico" ~"",
     Country=="Chile" ~"Chile-Mexico",
+    Country=="Brazil" ~"",
+    Country=="Argentina" ~"Argentina-Brazil",
+    Country=="Zimbabwe" ~"",
+    Country=="Tanzania" ~"Tanzania-Zimbabwe",
     Country=="France"~"",
     T ~ Country))
 
@@ -147,6 +153,7 @@ p2_tradeoff <- ggplot(data_fig,aes(cost,edb,size=res))+
             fontface = "italic",
             size=5*5/14 * 0.8,
             hjust=0)+
+  # geom_text_repel(aes(label=Country))+
   scale_x_continuous(limits = c(6.2,13.5)*1e3,
                      labels = scales::comma_format(big.mark = ' ',prefix = "$"))+
   scale_color_manual(values=resource_colors)+
@@ -159,7 +166,7 @@ p2_tradeoff <- ggplot(data_fig,aes(cost,edb,size=res))+
         legend.text = element_text(size=6),
         legend.key.height= unit(0.25, 'cm'),
         legend.key.width= unit(0.25, 'cm'),
-        legend.position = c(0.25,0.3))
+        legend.position = c(0.3,0.3))
 p2_tradeoff
 
 ggsave("Figures/Article/Tradeoff.png", ggplot2::last_plot(),

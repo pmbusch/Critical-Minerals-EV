@@ -58,12 +58,14 @@ head(df)
 df <- df %>% 
   mutate(label_name=if_else(all_resource>1000,Deposit_Name,"")) %>% 
   mutate(label_name=if_else(all_resource>1000,Deposit_Name,"")) %>% 
-  mutate(label_name=if_else(str_detect(Deposit_Name,"Arcadia|Goulamina|Zinnwald|Carolina|LANXESS|Grota|Volta|Ostroboth")
+  mutate(label_name=if_else(str_detect(Deposit_Name,"Arcadia|Goulamina|Zinnwald|Carolina|LANXESS|Xuxa|Volta|Ostroboth")
                             ,Deposit_Name,label_name)) %>% 
   mutate(label_name=label_name %>% str_remove_all(" \\(All\\)| \\(All Projects\\)| \\(Century\\)"))
 
 unique(df$label_name) %>% sort()
 
+# count by scenario
+df %>% group_by(symbol) %>% tally()
 
 # export for QGIS map preparation
 write.csv(df,"Results/MapOpenDeposits.csv",row.names = F)

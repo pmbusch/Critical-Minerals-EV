@@ -137,7 +137,7 @@ ggsave("Figures/Article/Figure3.png", ggplot2::last_plot(),
 
 # ggsave("Figures/Article/Figure3_2050.png", ggplot2::last_plot(),
 #        units="cm",dpi=600,
-#        width=12.1,height=12.1)
+       # width=12.1,height=12.1)
 
 
 
@@ -160,8 +160,9 @@ df_results %>%
   group_by(Country,t) %>% 
   reframe(tons=sum(tons_extracted)/1e3) %>% ungroup() %>% 
   group_by(t) %>% mutate(share=tons/sum(tons)) %>% 
-  arrange(desc(tons)) %>% slice_max(order_by = tons,n=1)
-
+  arrange(desc(tons)) %>% slice_max(order_by = tons,n=1) %>% 
+  # head(12)
+  filter(t==2050)
 
 # Lithium demand by time and region -----
 
@@ -199,7 +200,8 @@ data_region %>%
                                "Argentina"="#ff7f00","Canada"="#6A3D9A","China"="#ff0000",
                                "Germany"="#a6cee3","Mali"="#008000","Others"="#808080"))+
   scale_x_continuous(breaks = c(2030, 2040, 2050))+
-  theme(axis.text.x = element_text(hjust=1))
+  theme(axis.text.x = element_text(hjust=1),
+        strip.text = element_text(size=7))
 
 ggsave("Figures/Article/Production.png", ggplot2::last_plot(),
        units="cm",dpi=600,

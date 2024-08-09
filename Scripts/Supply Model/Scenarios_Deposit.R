@@ -8,6 +8,34 @@
 theme_set(theme_bw(8)+ theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.title.y=element_text(angle=0,margin=margin(r=0))))
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
 
+
+
+# note that some deposits parameters are different for each run - so do not use them sparingly
+# Input Parameters
+demand <- read.csv("Parameters/Demand.csv")
+recycling <- read.csv("Parameters/Recycling.csv")
+deposit <- read.csv("Parameters/Deposit.csv")
+
+(d_size <- nrow(deposit))
+(t_size <- nrow(demand))
+
+prod_rate <- expand.grid(Deposit_Name=unique(deposit$Deposit_Name),
+                         t=unique(demand$t)) %>% 
+  left_join(dplyr::select(deposit,Deposit_Name,prod_rate2022,prod_rate2023,
+                          prod_rate2025,prod_rate2030)) %>% 
+  mutate(prod_rate=case_when(
+    t == 2022 ~ prod_rate2022,
+    t == 2023 ~ prod_rate2023,
+    t == 2024 ~ (prod_rate2023+prod_rate2025)/2, # interpolation
+    t == 2025 ~ prod_rate2025,
+    t >= 2026 & t <= 2029 ~ (1-(t-2025)/5)*prod_rate2025+((t-2025)/5)*prod_rate2030,
+    T ~ prod_rate2030)) %>% 
+  dplyr::select(Deposit_Name,t,prod_rate)
+
+# bigM_cost <- 1e6 # same as Julia
+bigM_cost <- 100000*5.323 # historic high was 68K for LCE
+discount_rate <- 0.07 
+
 # Get list of all folders inside "Results/Optimization"
 (runs <- list.dirs("Results/Optimization/Scenarios_Deposit",recursive = T))
 runs <- runs[str_count(runs,"/")==4] # keep only the final folders
@@ -15,14 +43,6 @@ ref <- list.dirs("Results/Optimization/DemandScenario",recursive = F)
 runs <- c(ref,runs)
 
 (dict_scen <- tibble(Scenario=scens_selected,name=scens_names))
-
-
-# note that some deposits parameters are different for each run - so do not use them sparingly
-source("Scripts/Supply Model/02-LoadOptimizationResults.R", encoding = "UTF-8")
-
-
-FIX THIS BEFORE CALLING TO THAT PREVIOUS FUNCTION, MAYBE NEED TO DO IT MANUALLY THIS TIME
-
 
 ## Deposits Scenarios -------------
 
@@ -81,7 +101,7 @@ df_results <- df_results %>%
   mutate(tons_extracted=tons_extracted1+tons_extracted2+tons_extracted3) %>% 
   left_join(ald_opens) %>% 
   group_by(name,dep_scen,Deposit_Name) %>% 
-  mutate(new_mine_open= !already_open & mine_opened==1,
+  mutate(new_mine_open= !already_open & near(mine_opened,1),
          mine_open=cumsum(mine_opened),
          total_extraction=cumsum(tons_extracted),
          total_extraction1=cumsum(tons_extracted1),
@@ -121,8 +141,7 @@ y_title="Number of new opened Deposits"
 # # uncomment for SLACK
 # slack_value <- slack %>%
 #   filter(t<2051) %>%
-#   left_join(tibble(Scen_Deposit=dep_scen,
-#                    dep_scen=dep_scen_name)) %>%
+#   left_join(tibble(Scen_Deposit=dep_scen,dep_scen=dep_scen_name)) %>%
 #   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>%
 #   group_by(name,dep_scen) %>%
 #   reframe(slack=sum(value))
@@ -174,7 +193,7 @@ p1 <- ggplot(data_fig,aes(dep_scen,mines_open))+
   geom_vline(xintercept = c(0.5,2.5,5.5,7.5,9.5),
              col="grey",linewidth=0.15)+
   coord_flip()+
-  scale_y_continuous(breaks = c(0,25,50,75,100))+
+  scale_y_continuous(breaks = c(0,25,50,75),limits = c(0,97))+
   labs(x="",col="Demand\nScenario",
        y=y_title,
        title="(A) Deposit Parameters Sensitivity")+
@@ -182,8 +201,11 @@ p1 <- ggplot(data_fig,aes(dep_scen,mines_open))+
   theme(panel.border=element_blank(),
         axis.text.y = element_text(hjust=0),
         legend.text = element_text(size=6),
+        legend.title = element_text(size=8),
+        legend.spacing.x = unit(0.1, 'cm'),
         legend.position = "bottom",
         legend.spacing.y = unit(0.1, "cm"),
+        legend.key.width = unit(0.1,'cm'),
         axis.ticks.y = element_blank())
 p1
 
@@ -226,25 +248,25 @@ ref <- list.dirs("Results/Optimization/DemandScenario",recursive = F)
 runs <- c(ref,runs)
 
 # Read all results and put them in the same dataframe!
-df_results <- do.call(rbind, lapply(runs, function(folder_path)
+df_results2 <- do.call(rbind, lapply(runs, function(folder_path)
   transform(read.csv(file.path(folder_path, "Base_Julia.csv")), 
             Scenario = folder_path)))
-df_results <- df_results %>% rename(Deposit_Name=d)
-df_results$Scenario %>% unique()
+df_results2 <- df_results2 %>% rename(Deposit_Name=d)
+df_results2$Scenario %>% unique()
 
 # separate demand and deposit scenario
-df_results <- df_results %>% 
+df_results2 <- df_results2 %>% 
   mutate(path=Scenario %>% str_remove("Results/Optimization/"),
          count_aux=str_count(path,"/"),
          path=paste0(path,if_else(count_aux==1,"/Base",""))) %>% 
   separate(path, into = c("Aux","Scenario","Scen_Deposit"), sep = "/") %>% 
   mutate(count_aux=NULL,Aux=NULL)
 
-slack <- do.call(rbind, lapply(runs, function(folder_path) 
+slack2 <- do.call(rbind, lapply(runs, function(folder_path) 
   transform(read.csv(file.path(folder_path, "Slack_Julia.csv")), 
             Scenario = (folder_path))))
 
-slack <- slack %>% 
+slack2 <- slack2 %>% 
   mutate(path=Scenario %>% str_remove("Results/Optimization/"),
          count_aux=str_count(path,"/"),
          path=paste0(path,if_else(count_aux==1,"/Base",""))) %>% 
@@ -252,16 +274,16 @@ slack <- slack %>%
   mutate(count_aux=NULL,Aux=NULL)
 
 # add scen name
-df_results <- df_results %>% 
+df_results2 <- df_results2 %>% 
   left_join(tibble(Scenario=scens_selected,name=scens_names))
 
 # add deposits name
-unique(df_results$Scen_Deposit)
+unique(df_results2$Scen_Deposit)
 # country order
 count_order <- c("Reference","Canada","United States",
                  "DR Congo","Tanzania","Australia",
                  "Lithium Triangle","Bolivia","Argentina","Chile")
-df_results <- df_results %>% 
+df_results2 <- df_results2 %>% 
   mutate(Scen_Deposit=Scen_Deposit %>% 
            str_replace("Base","Reference") %>% 
            factor(levels=rev(count_order)))
@@ -271,25 +293,25 @@ df_results <- df_results %>%
 ald_opens <- deposit %>% dplyr::select(Deposit_Name,open_mine) %>% 
   rename(already_open=open_mine)
 
-df_results <- df_results %>% 
+df_results2 <- df_results2 %>% 
   mutate(tons_extracted=tons_extracted1+tons_extracted2+tons_extracted3) %>% 
   left_join(ald_opens) %>% 
   group_by(name,Scen_Deposit,Deposit_Name) %>% 
-  mutate(new_mine_open= !already_open & mine_opened==1,
+  mutate(new_mine_open= !already_open & near(mine_opened,1),
          mine_open=cumsum(mine_opened),
          total_extraction=cumsum(tons_extracted),
          total_extraction1=cumsum(tons_extracted1),
          total_extraction2=cumsum(tons_extracted2),
          total_extraction3=cumsum(tons_extracted3)) %>% ungroup()
 
-df_results %>% filter(t<2051) %>% 
+df_results2 %>% filter(t<2051) %>% 
   left_join(dplyr::select(deposit,Deposit_Name,Resource_Type)) %>% 
   group_by(name,Scen_Deposit,Resource_Type) %>% 
   reframe(tons_extracted=sum(tons_extracted)/1e3) %>% #million 
   pivot_wider(names_from = Resource_Type, values_from = tons_extracted)
 
 # Slack
-slack %>% 
+slack2 %>% 
   filter(t<2051) %>% 
   group_by(Scenario,Scen_Deposit) %>% reframe(x=sum(value)/1e3) %>% arrange(desc(x))
 
@@ -297,7 +319,7 @@ slack %>%
 # Deposit Scenarios -------------
 
 ## Mines opened ---------
-data_fig2 <- df_results %>%
+data_fig2 <- df_results2 %>%
   filter(t<2051) %>%
   group_by(name,Scen_Deposit) %>% 
   reframe(mines_open=sum(new_mine_open)) %>% 
@@ -313,7 +335,7 @@ y_title="Number of new opened Deposits"
 
 
 # uncomment for slack
-# slack_value2 <- slack %>%
+# slack_value2 <- slack2 %>%
 #   filter(t<2051) %>%
 #   mutate(Scen_Deposit=Scen_Deposit %>% str_replace("Base","Reference")) %>%
 #   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>%
@@ -328,7 +350,7 @@ y_title="Number of new opened Deposits"
 # uncomment for total cost
 # Remove effect of discount rate
 # discounter <- tibble(t=2022:(t_size+2021),r=(1+discount_rate)^(0:(t_size-1)))
-# cost2 <- df_results %>%
+# cost2 <- df_results2 %>%
 #   filter(t<2051) %>%
 #   left_join(deposit) %>%
 #   mutate(total_cost=cost1*tons_extracted1+cost2*tons_extracted2+cost3*tons_extracted3+

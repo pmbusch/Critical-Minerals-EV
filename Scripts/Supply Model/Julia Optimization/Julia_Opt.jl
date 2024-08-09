@@ -402,7 +402,7 @@ for scen in unique_scenarios
     for con in countries
         println(con)
         deposit_c = filter(row -> row.Country != con, depositAll) # N-1, remove that country
-        runOptimization(demand_scen,deposit_c,"N1_Countries_Demand/$scen/$con/",0.1,false)
+        #runOptimization(demand_scen,deposit_c,"N1_Countries_Demand/$scen/$con/",0.1,false)
     end
     # Remove lithium triangle
     deposit_c = filter(row -> row.Country != "Chile", depositAll) # N-1, remove that country

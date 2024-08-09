@@ -35,6 +35,12 @@ source("Scripts/Supply Model/02-LoadOptimizationResults.R", encoding = "UTF-8")
     group_by(name) %>% pivot_wider(names_from = t, values_from = Demand) %>% 
     mutate(ratio=`2050`/`2022`) %>% dplyr::select(name,ratio))
 
+# recycling capacity (flows) at 2050
+(table_recycling <- recycling %>%
+    filter(t==2050) %>%
+    group_by(name) %>%
+    reframe(recyc2050=sum(Recycling)/1e3)) # to Mtons
+
 # Increase in capacity of open mines
 (table_capIncrease <- df_results %>% 
     filter(t==2050) %>%
@@ -237,6 +243,7 @@ both_supply <- rbind(country_supply,country_recycling) %>%
 # Join all
 (table_all <- table_demand %>% 
     left_join(table_Peakdemand) %>% 
+    left_join(table_recycling) %>%
     left_join(table_depletion) %>%
     left_join(table_capIncrease) %>% 
     left_join(table_open) %>% left_join(table_open2035) %>% 

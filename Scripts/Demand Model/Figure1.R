@@ -1,6 +1,6 @@
 # Fig. 1 Demand Results
 # PBH June 2024
-# Fig widhts note: 1 column=5.7cm, 2 col=12.1cm or 3 col=18.4cm
+# Fig widths note: 1 column=5.7cm, 2 col=12.1cm or 3 col=18.4cm
 
 
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
