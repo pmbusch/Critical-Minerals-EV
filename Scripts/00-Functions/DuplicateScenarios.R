@@ -1,3 +1,5 @@
+# DEPRECEATED - NOT USED ANYMORE
+
 
 # Function to duplicate scenarios results when aggregating (group_by) results from long table
 # Key idea: Store results with no Scenario as "No Scenario", then replicate them for results

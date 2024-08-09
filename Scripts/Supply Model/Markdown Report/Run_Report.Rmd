@@ -1,0 +1,527 @@
+---
+title: "Supply Dispatch Optimization: Test Report"
+output: pdf_document
+date: "`r format(Sys.time(),'%d-%m-%Y')`"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	error = F,
+	fig.align = "center",
+	fig.height = 5,
+	fig.pos = "H",
+	fig.width = 8.5,
+	message = FALSE,
+	warning = FALSE,
+	dpi = 300,
+	ft.left = 2.5
+)
+```
+
+
+```{r}
+# NOTE: RUN SHOULD BE AFTER RUNNING THE OPTIMIZATION!
+```
+
+# Basic "Sniff Test"
+
+Just to know everything is ok. In **bold** there is the expected result:
+
+No mine opened twice: **0 1**
+```{r}
+df_results %>%  group_by(d) %>% 
+  reframe(x=sum(mine_opened)) %>% pull(x) %>% range()
+```
+
+Number of mines opened and total number of mines: **A reasonable number, above 0 and below 100**
+
+```{r}
+sum(df_results$mine_opened)
+nrow(deposit)
+```
+
+Number of mines with production: **Should be same as mines opened**
+```{r}
+df_results %>% filter(tons_extracted>0.00001) %>% pull(d) %>% unique() %>% length()
+```
+
+
+Production at last period vs demand. Note there is existing capacity: **Equal or really close**
+
+```{r}
+sum(df_results$capacity_added)+sum(deposit$prod_rate)
+sum(df_results$cap_total)
+demand$Demand[t_size]
+```
+
+Total extraction vs reserves: **Extraction (first) should be less than reserves**
+Values shown for reserves, resources demonstrated and resources inferred.
+
+```{r}
+sum(df_results$tons_extracted1)
+sum(deposit$reserve)
+sum(df_results$tons_extracted2)
+sum(deposit$resource_demostrated)
+sum(df_results$tons_extracted3)
+sum(deposit$resource_inferred)
+```
+
+No production or extraction at unopened mines: **Should be 0**
+
+```{r}
+closed_d <- df_results %>% group_by(d) %>%
+  reframe(x=sum(mine_opened)) %>% filter(x==0) %>% pull(d)
+df_results %>% filter(d %in% closed_d) %>%
+  reframe(tons_extracted=sum(tons_extracted),
+          capacity_added=sum(capacity_added))
+```
+
+Max production rate achieved vs ramp up limit: **First should be lower/equal than second**
+
+```{r}
+df_results %>% reframe(x=max(cap_total)) %>% pull(x)
+max(deposit$max_prod_rate) # bigM_extract
+```
+
+Test sequential (order) in extraction within each deposit, between shares (lower and higher cost). Extraction should always occurs first in the first half, and then the second part (more expensive).
+
+```{r}
+df_results %>% 
+  filter(tons_extracted>0.001) %>% 
+  left_join(deposit) %>% 
+  mutate(stages_dep=case_when(
+    total_extraction>=reserve+resource_demostrated+resource_inferred-1 ~ "Depletion", # mnargin of 1 as they represent really close
+    tons_extracted1>tons_extracted2 ~ "Reserve",
+    tons_extracted2>tons_extracted3 ~ "Demonstrated Resources",
+    T ~ "Inferred Resources") %>% 
+      factor(levels=c("Reserve","Demonstrated Resources",
+                      "Inferred Resources","Depletion"))) %>%
+  ggplot(aes(t,Deposit_Name))+
+  geom_tile(aes(fill=stages_dep))+
+    ggforce::facet_col(facets = vars(Resource_Type), 
+                     scales = "free_y", 
+                     space = "free") +
+  scale_fill_manual(values = c("darkgreen","darkorange","darkblue","darkred"))+
+  coord_cartesian(expand = F)+
+  labs(x="",y="",fill="Extraction in")+
+  theme(legend.position = "bottom")
+```
+
+
+
+## Shadow prices or dual model results
+
+Should be exactly the **same/equal** as mixed integer results.
+
+
+```{r}
+# Objective value:
+# compare MIP (gurobi) solution against LP (glpk)
+# result$objective_value
+# result_LP$objective_value+sum(cost_opening*openings)
+```
+
+Total mineral extracted: 
+
+```{r}
+sum(df_results$tons_extracted1)
+sum(df_results_LP$tons_extracted1)
+sum(df_results$tons_extracted2)
+sum(df_results_LP$tons_extracted2)
+sum(df_results$tons_extracted3)
+sum(df_results_LP$tons_extracted3)
+```
+
+Total capacity added: 
+
+```{r}
+sum(df_results$capacity_added)
+sum(df_results_LP$capacity_added)
+```
+
+Mineral extraction detail:
+
+```{r}
+df_results %>% rename(value_orig=tons_extracted1) %>% 
+  left_join(df_results_LP) %>% dplyr::select(d,t,value_orig,tons_extracted1) %>% 
+  mutate(diff=abs(value_orig-tons_extracted1)) %>% arrange(desc(diff)) %>% head()
+df_results %>% rename(value_orig=tons_extracted2) %>% 
+  left_join(df_results_LP) %>% dplyr::select(d,t,value_orig,tons_extracted2) %>% 
+  mutate(diff=abs(value_orig-tons_extracted2)) %>% arrange(desc(diff)) %>% head()
+df_results %>% rename(value_orig=tons_extracted3) %>% 
+  left_join(df_results_LP) %>% dplyr::select(d,t,value_orig,tons_extracted3) %>% 
+  mutate(diff=abs(value_orig-tons_extracted3)) %>% arrange(desc(diff)) %>% head()
+```
+
+Capacity added detail:
+
+```{r}
+df_results %>% rename(value_orig=capacity_added) %>% 
+  left_join(df_results_LP) %>% dplyr::select(d,t,value_orig,capacity_added) %>% 
+  mutate(diff=abs(value_orig-capacity_added)) %>% arrange(desc(diff)) %>% head()
+```
+
+
+# Model Results
+
+A brief glance at model results
+
+```{r}
+theme_set(theme_bw(16)+ theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.title.y=element_text(angle=0,margin=margin(r=0))))
+```
+
+## Production over time
+
+```{r}
+df_results %>% 
+  left_join(deposit) %>% 
+  # filter(t<2051) %>%
+  group_by(Country,t) %>% 
+  reframe(tons_extracted=sum(tons_extracted)) %>% ungroup() %>% 
+  rename(d=Country) %>% 
+  # aggregate big countries
+  group_by(d) %>% mutate(total_prod=sum(tons_extracted)) %>% ungroup() %>%
+  group_by(t) %>% mutate(share_prod=total_prod/sum(total_prod)) %>% ungroup() %>% 
+  mutate(d=if_else(share_prod>0.02,d,"Other countries")) %>% 
+  group_by(d,t) %>% 
+  reframe(tons_extracted=sum(tons_extracted)) %>% ungroup() %>% 
+# end aggregate other countries
+    # mutate(d=factor(d)) %>% 
+  ggplot(aes(t,tons_extracted,fill=d,group=d))+
+  geom_area()+
+  geom_vline(xintercept = 2050, linetype="dashed",col="black")+
+  coord_cartesian(expand = F)+
+  labs(x="",y="",title="Production [ktons]",fill="Country")+
+  theme(
+    # legend.position = "none",
+        axis.text.x = element_text(hjust=1))
+if (save_figures){ f.fig.save(sprintf(fig_name,"production"))}
+
+# With Resource type now
+df_results %>% 
+  left_join(deposit) %>% 
+  filter(t<2051) %>%
+  group_by(Resource_Type,t) %>% 
+  reframe(tons_extracted=sum(tons_extracted)) %>% ungroup() %>% 
+  rename(d=Resource_Type) %>% 
+  # mutate(d=factor(d)) %>% 
+  ggplot(aes(t,tons_extracted,fill=d,group=d))+
+  geom_area()+
+  coord_cartesian(expand = F)+
+  scale_fill_manual(values=resource_colors)+
+  labs(x="",y="",title="Production [ktons]",fill="Resource \n Type")+
+  theme(
+    # legend.position = "none",
+        axis.text.x = element_text(hjust=1))
+if (save_figures){ f.fig.save(sprintf(fig_name,"productionType"))}
+
+```
+
+## Extraction by stage
+
+```{r}
+data_fig <- df_results %>% 
+  filter(t<2051) %>% 
+  dplyr::select(t,Deposit_Name,tons_extracted1,
+                tons_extracted2,tons_extracted3) %>% 
+  pivot_longer(c(-t,-Deposit_Name), 
+               names_to = "key", values_to = "value") %>% 
+  group_by(t,key) %>% 
+  reframe(tons_extracted=sum(value)) %>% ungroup() %>% 
+  mutate(key=case_when(
+    key =="tons_extracted1" ~ "Reserves",
+    key =="tons_extracted2" ~ "Demonstrated Resources",
+    key =="tons_extracted3" ~ "Inferred Resources") %>% 
+      factor(levels=c("Reserves","Demonstrated Resources","Inferred Resources"))) %>% 
+  rename(d=key)
+
+ggplot(data_fig,aes(t,tons_extracted,fill=d,group=d))+
+  geom_area()+
+  coord_cartesian(expand = F)+
+   scale_fill_manual(values =  rev(c("#6b6b6b", "#ff7f0e", "#1f77b4")))+
+  labs(x="",y="",title="Production [ktons]",fill="Resource \n Type")+
+  theme(
+    # legend.position = "none",
+        axis.text.x = element_text(hjust=1))
+if (save_figures){ f.fig.save(sprintf(fig_name,"productionStage"))}
+
+```
+
+## Depletion by Stage
+
+```{r}
+total_resources <- tibble(
+  d=c("Reserves","Demonstrated Resources","Inferred Resources"),
+  total_res=c(sum(deposit$reserve),sum(deposit$resource_demostrated),sum(deposit$resource_inferred))
+)
+
+data_fig %>%
+  group_by(d) %>% mutate(tons_extracted=cumsum(tons_extracted)) %>% ungroup() %>% 
+  left_join(total_resources) %>% 
+  mutate(d= factor(d,levels=c("Reserves","Demonstrated Resources","Inferred Resources"))) %>%  
+  mutate(depletion=tons_extracted/total_res) %>% 
+  ggplot(aes(t,depletion,col=d,group=d))+
+  geom_line(linewidth=1)+
+  coord_cartesian(expand = F)+
+  scale_color_manual(values =  rev(c("#6b6b6b", "#ff7f0e", "#1f77b4")))+
+  scale_y_continuous(labels=scales::percent)+
+  labs(x="",y="",title="Depletion rate [%]",col="Resource Type")+
+  theme(
+    legend.position = c(0.2,0.7),
+        axis.text.x = element_text(hjust=1))
+if (save_figures){ f.fig.save(sprintf(fig_name,"depletion"))}
+```
+
+
+
+## Map cumulative production
+```{r}
+# World map with polygons
+map1 <- map_data('world')
+
+data_map <- df_results %>% 
+  filter(t<2051) %>% group_by(Deposit_Name) %>% 
+  reframe(tons_extracted=sum(tons_extracted)) %>% ungroup() %>% 
+  filter(tons_extracted>0.001) %>%
+  left_join(deposit) %>% 
+  filter(!str_detect(Resource_Type,"Other"))
+  
+ggplot(data_map) +
+  # base map
+  theme_minimal() +
+  geom_polygon(data = map1, 
+               mapping = aes(x = long, 
+                             y = lat, 
+                             group = group),
+               col = 'gray', fill="white") +
+  coord_fixed(1.4, xlim = c(-140,160), ylim=c(-70,70))+
+   scale_y_continuous(breaks = NULL,name = "")+
+   scale_x_continuous(breaks = NULL,name = "")+
+  theme(panel.grid = element_blank())+
+  # data
+  geom_point(aes(x = Longitude, y = Latitude,
+                 size = tons_extracted,col=Resource_Type), alpha = 0.7) +
+  scale_color_manual(values = resource_colors)+
+  # scale_size_continuous(trans="log10") +
+  labs(col="Resource \n Type",
+       size = "Total tons extracted \n 2022-2050 [ktons]")
+if (save_figures){ f.fig.save(sprintf(fig_name,"map"))}
+```
+
+## Opened Mines over time
+
+```{r}
+df_results %>% 
+  filter(t<2051) %>%
+  rename(value=mine_opened) %>% 
+  mutate(value=factor(value)) %>% 
+  left_join(deposit,by="d") %>% 
+  ggplot(aes(t,d,fill=value))+
+  geom_tile()+
+    ggforce::facet_col(facets = vars(Resource_Type), 
+                     scales = "free_y", 
+                     space = "free") +
+  coord_cartesian(expand = F)+
+  scale_y_continuous(breaks = NULL)+
+  scale_fill_manual(values = c("0" = "white", "1" = "red"))+
+  labs(x="",y="Deposit ",fill="",caption="Each row is a deposit. Red indicates opening.")+
+  theme(legend.position = "none")
+if (save_figures){f.fig.save(sprintf(fig_name,"minesOpen"))}
+```
+
+## Production capacity over time
+
+```{r}
+max_cap_openMines <- df_results %>% 
+  left_join(deposit, by="d") %>% mutate(max_prod=mine_open*max_prod_rate) %>% 
+  filter(t<2051) %>% group_by(t) %>% reframe(max_prod=sum(max_prod))
+
+df_results %>% 
+  filter(t<2051) %>% 
+  ggplot(aes(t,cap_total))+
+  geom_area(aes(fill=d,group=d))+
+  geom_line(data=max_cap_openMines,aes(y=max_prod),linewidth=1,col="red")+
+  coord_cartesian(expand = F)+
+  labs(x="",y="Production \n Capacity \n [ktons]",
+       caption="Red line: Maximum production capacity of opened mines")+
+  theme(legend.position = "none",
+        axis.text.x = element_text(hjust=1))
+if (save_figures){f.fig.save(sprintf(fig_name,"prodCapacity"))}
+```
+
+## Curtailed demand or not met
+
+```{r}
+slack %>% 
+  filter(t<2051) %>%
+  ggplot(aes(t,value))+
+  geom_line(linewidth=1)+
+  coord_cartesian(expand = F)+
+  labs(x="",title="Global demand NOT met, or slack [ktons]",y="")+
+  theme(legend.position = "none",
+        axis.text.x = element_text(hjust=1))
+if (save_figures){f.fig.save(sprintf(fig_name,"demandNotMet"))}
+```
+
+
+# Shadow prices
+
+Some interesting results showcasing shadow prices (or duals). They represent the marginal change in the objective function (total costs) that a marginal change in the restriction does.
+
+## Demand constraint
+
+Should be positive: more demand implies more cost.
+
+```{r}
+# get max with slack non zero
+max_slack <- sp_demand %>% filter(value<bigM_cost*0.9) %>% 
+  pull(value) %>% max()
+
+# Remove effect of discount rate
+discounter <- tibble(t=2022:(t_size+2021),r=(1+discount_rate)^(0:(t_size-1)))
+
+sp_demand %>% 
+  filter(t<2051) %>% 
+  left_join(discounter) %>% 
+  mutate(value=value*r/5.323*1e3) %>%  # to LCE
+  ggplot(aes(t,value))+
+  geom_line()+
+  # ylim(0,max_slack*1.1)+
+  labs(x="",y="Shadow Price \n Demand",caption="All costs in 2022USD (no discount).")
+if (save_figures){f.fig.save(sprintf(fig_name,"SP_demand"))}
+
+# note: all should be negative to make sense
+# sp_rest %>% reframe(sp_maxProdRate=max(sp_maxProdRate),
+#                     sp_rampUp=max(sp_rampUp),
+#                     sp_capacity=max(sp_capacity))
+```
+
+## Reserve constraint
+
+Should be zero (not binding) or negative
+
+Reserve part:
+```{r}
+sp_reserve %>% 
+  filter(sp_reserve!=0) %>% # remove zeros
+  left_join(deposit,by="d") %>% 
+  ggplot(aes(reorder(Deposit_Name,sp_reserve),sp_reserve,fill=Resource_Type))+
+  geom_col()+
+  coord_flip()+
+  scale_fill_manual(values = resource_colors)+
+  # scale_x_discrete(breaks = NULL)+
+  labs(x="Deposit",y="Shadow Price Reserves",fill="")+
+  
+  theme(axis.text.y = element_text(size=6))
+if (save_figures){f.fig.save(sprintf(fig_name,"SP_reserve"))}
+```
+
+Second part: Demonstrated Resources (more expensive)
+
+```{r}
+cat("Mines that reached depletion: ")
+print(sp_reserve %>% filter(sp_resource_demostrated<0) %>% nrow())
+
+sp_reserve %>% 
+  filter(sp_resource_demostrated!=0) %>% # remove zeros
+  left_join(deposit,by="d") %>% 
+  ggplot(aes(reorder(Deposit_Name,sp_resource_demostrated),
+             sp_resource_demostrated,fill=Resource_Type))+
+  geom_col()+
+  coord_flip()+
+  # scale_x_discrete(breaks = NULL)+
+  scale_fill_manual(values = resource_colors)+
+  labs(x="Deposit",y="Shadow Price Demonstrated Resources",fill="")+
+  theme(axis.text.y = element_text(size=6))
+if (save_figures){f.fig.save(sprintf(fig_name,"SP_resource_demostrated"))}
+```
+
+
+Second part: Inferred Resources (more expensive)
+
+```{r}
+cat("Mines that reached depletion: ")
+print(sp_reserve %>% filter(sp_resource_inferred<0) %>% nrow())
+
+sp_reserve %>% 
+  filter(sp_resource_inferred!=0) %>% # remove zeros
+  left_join(deposit,by="d") %>% 
+  ggplot(aes(reorder(Deposit_Name,sp_resource_inferred),
+             sp_resource_inferred,fill=Resource_Type))+
+  geom_col()+
+  coord_flip()+
+  # scale_x_discrete(breaks = NULL)+
+  scale_fill_manual(values = resource_colors)+
+  labs(x="Deposit",y="Shadow Price Inferred Resources",fill="")+
+  theme(axis.text.y = element_text(size=6))
+if (save_figures){f.fig.save(sprintf(fig_name,"SP_resource_inferred"))}
+```
+
+
+## Max Current Production Constraint
+
+Should be negative
+
+```{r}
+# ORDER IS KEY TO GET CORRECT SHADOW PRICES FROM THE MATRIX/VECTOR
+p1 <- sp_rest %>% 
+  filter(t<2051) %>% 
+  left_join(deposit,by="d") %>% 
+  left_join(dplyr::select(df_results,d,t,mine_open),by=c("d","t")) %>% 
+  # filter(mine_open==1) %>% 
+  mutate(sp_maxProdRate=mine_open*sp_maxProdRate) %>%
+  ggplot(aes(t,Deposit_Name,fill=sp_maxProdRate))+
+  geom_tile()+
+  # facet_grid(Resource_Type~.,space = "free",scales = "free")+
+  ggforce::facet_col(facets = vars(Resource_Type), 
+                     scales = "free_y", 
+                     space = "free") +
+  coord_cartesian(expand = F)+
+  scale_fill_gradientn(colors = c("red", "white"))+
+  # scale_y_continuous(breaks = NULL)+
+  labs(x="",y="Deposit",fill="Shadow Price \nMax prod. rate")+
+  theme(axis.text.y = element_text(size=6))
+p1+aes(fill=sp_capacity)+labs(fill="Shadow Price \nCapacity")
+if (save_figures){f.fig.save(sprintf(fig_name,"SP_Capacity"))}
+```
+
+## Max Production Rate Constraint
+
+Should be negative
+
+```{r}
+cat("Mines that reached maximum allowable production capacity: ")
+# consider only open mines
+print(sp_rest %>% 
+  filter(t<2051) %>% 
+    left_join(dplyr::select(df_results,d,t,mine_open),by=c("d","t")) %>%
+    mutate(sp_maxProdRate=mine_open*sp_maxProdRate) %>% 
+    filter(sp_maxProdRate < 0) %>% 
+   pull(d) %>% unique() %>% length())
+
+# df_results %>% 
+#   left_join(deposit, by="d") %>%
+#   filter(abs(cap_total-max_prod_rate)<0.1) %>% 
+#   pull(d) %>% unique() %>% length()
+p1
+if (save_figures){f.fig.save(sprintf(fig_name,"SP_MaxProdRate"))}
+```
+
+
+## Max Ramp Up Production Rate Constraint
+
+Should be negative
+
+```{r}
+cat("Mines that reached ramp up constraint at some point: ")
+print(sp_rest %>% 
+  filter(t<2051) %>% filter(sp_rampUp < 0) %>% 
+   pull(d) %>% unique() %>% length())
+
+p1+aes(fill=sp_rampUp)+labs(fill="Shadow Price \nRamp up")
+if (save_figures){f.fig.save(sprintf(fig_name,"SP_RampUp"))}
+```
+

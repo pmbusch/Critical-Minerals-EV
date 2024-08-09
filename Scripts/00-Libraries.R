@@ -1,5 +1,5 @@
-### MONET
 ## Load all required libraries to use
+## Common file to run from multiple scritps
 ## PBH Feb 2023
 
 # Library -----
@@ -34,13 +34,13 @@ rm(file.sources)
 
 
 # Load Dimensions and Levels ----------
-
 power_level <- read_excel("Data/Dimensions.xlsx",sheet="Powertrain")$Powertrain
 region_level <- read_excel("Data/Dimensions.xlsx",sheet="Region")$Region
 country_level <- read_excel("Data/Dimensions.xlsx",sheet="Country")$Country
 vehicle_level <- read_excel("Data/Dimensions.xlsx",sheet="Vehicle")$Vehicle
 scen_level <- c("Baseline","Momentum","Ambitious")
 
+# Run all demand for all minerals in the model, filter later for min. of interest.
 min_interest3 <- c("Lithium","Nickel","Cobalt","Manganese","Phosphorus")
 min_interest2 <- c("Lithium","Nickel","Cobalt","Manganese")
 min_interest <- c("Lithium","Nickel","Cobalt")
@@ -77,19 +77,19 @@ scens_selected <- scens_selected$scen_all
 # Names of scenarios
 scens_names <- c("(1) Reference",
                  "(2) High Capacity LIB","(3) Low Capacity LIB",
-                 "(4) NMC811 Adoption","(5) LFP Adoption",
+                 "(4) NMC811 Dominant Chemistry","(5) LFP Dominant Chemistry",
                  "(6) Solid State Adoption","(7) SIB Adoption",
-                 "(8) Enhanced Repurpose","(9) Enhanced Recycling")
+                 "(8) Enhanced Repurposing","(9) Enhanced Recycling")
 # Color
 scen_colors <- c(
-  "(1) Reference" = "#808080",
+  "(1) Reference" = "#000000",
   "(2) High Capacity LIB"="#0072B2",
   "(3) Low Capacity LIB"="#56B4E9",
-  "(4) NMC811 Adoption" = "#D55E00",
-  "(5) LFP Adoption" = "#CC79A7",
+  "(4) NMC811 Dominant Chemistry" = "#D55E00",
+  "(5) LFP Dominant Chemistry" = "#8B4513",
   "(6) Solid State Adoption" = "#E69F00",
-  "(7) SIB Adoption" = "#F0E442",
-  "(8) Enhanced Repurpose" = "#D62728",
+  "(7) SIB Adoption" = "#CC79A7",
+  "(8) Enhanced Repurposing" = "#D62728",
   "(9) Enhanced Recycling" = "#009E73"
 )
 
