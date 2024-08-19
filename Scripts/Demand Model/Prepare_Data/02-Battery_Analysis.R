@@ -396,7 +396,8 @@ bat_region %>%
   left_join(eq_region,by=c("Region"="ICCT_Region")) %>% mutate(Region=EVV_SubRegion) %>% 
   distinct(Region,chemistry,.keep_all = T) %>% 
 # end show
-  mutate(chemistry=factor(chemistry,levels=chem_level)) %>% 
+  mutate(chemistry=factor(chemistry,levels=chem_level)) %>%
+  mutate(Region=Region %>% str_replace("Northern","North")) %>% 
   ggplot(aes(reorder(Region,kwh_veh_total),kwh_veh,fill=fct_rev(chemistry)))+
   geom_col(position = "stack",col="black",linewidth=0.1)+
   # facet_wrap(~Propulsion,scales = "free_y",dir = "v")+

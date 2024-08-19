@@ -8,7 +8,7 @@
 # LOAD DATA ---------
 ####################
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
-source("Scripts/01-ParametersDemand.R", encoding = "UTF-8")
+source("Scripts/Demand Model/01-ParametersDemand.R", encoding = "UTF-8")
 
 ## ICCT on-road demand projections -----
 # Extended forecast towards 2070
@@ -93,11 +93,13 @@ weighted_avg_index <- function(vec) {
 # Do Loop for all demand scenarios - to make sure calculation are correct
 # Bad part more data storage and calculations needed, but could be worth it
 
-scen_level
+scen_level <- c("Baseline","Momentum","Ambitious")
+# scen_level <- c("Ambitious")
 chems_scen <- c("Baseline","Double LFP","Double NMC 811",
                 "Solid State adoption","Sodium Battery adoption")
 capacity_scen <- c("Baseline","Low Range","High Range")
 lifetime_scen <- c("Baseline","Long duration")
+lifetime_scen <- c("Baseline")
 recycling_scen <- recycling_scenarios$recycling_scenario %>% unique()
 
 # results
@@ -107,7 +109,7 @@ start_time <- proc.time()
 # debug
 # scen=scen_level[1];scen_chem=chems_scen[1];scen_bat=capacity_scen[1];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
 # scen=scen_level[3];scen_chem=chems_scen[1];scen_bat=capacity_scen[1];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
-
+length(scen_level)*length(chems_scen)*length(capacity_scen)*length(lifetime_scen)*length(recycling_scen)
 for (scen in scen_level){
   cat("Scenario ICCT: ",scen,"\n")
   for (scen_chem in chems_scen){
@@ -121,9 +123,9 @@ for (scen in scen_level){
           
           # all scenarios combined
           scen_all <- paste(scen,scen_chem,scen_bat,scen_life,scen_recyc, sep="-")
-          if(!(scen_all %in% scens_selected)){ # RUN ONLY DESIRED SCENARIOS
-            next
-          }
+          # if(!(scen_all %in% scens_selected)){ # RUN ONLY DESIRED SCENARIOS
+          #   next
+          # }
 
           df <- icct %>% 
             filter(Powertrain!="ICE") %>% 
@@ -464,20 +466,20 @@ for (scen in scen_level){
         rm(df_region)
         
         # Save results at Coutry level - SLOW!
-        df_country <- df %>% 
-          group_by(Year,Region,Country,Powertrain,Vehicle,chemistry,Mineral) %>% 
-          reframe(tons_mineral=sum(tons_mineral)) %>% ungroup()
-        nrow(df_country) # 
-        # add scenarios
-        df_country$Scenario <- scen
-        df_country$chem_scenario <- scen_chem  
-        df_country$capacity_scenario <- scen_bat
-        df_country$lifetime_scenario <- scen_life
-        df_country$recycling_scenario <- scen_recyc
-        # bind
-        df_country <- df_country %>% filter(abs(tons_mineral)>0)
-        df_country_final <- rbind(df_country_final,df_country)
-        rm(df_country)
+        # df_country <- df %>% 
+        #   group_by(Year,Region,Country,Powertrain,Vehicle,chemistry,Mineral) %>% 
+        #   reframe(tons_mineral=sum(tons_mineral)) %>% ungroup()
+        # nrow(df_country) # 
+        # # add scenarios
+        # df_country$Scenario <- scen
+        # df_country$chem_scenario <- scen_chem  
+        # df_country$capacity_scenario <- scen_bat
+        # df_country$lifetime_scenario <- scen_life
+        # df_country$recycling_scenario <- scen_recyc
+        # # bind
+        # df_country <- df_country %>% filter(abs(tons_mineral)>0)
+        # df_country_final <- rbind(df_country_final,df_country)
+        # rm(df_country)
         
         }
       }
@@ -488,6 +490,7 @@ rm(scen,scen_chem,scen_bat)
 end_time <- proc.time() # Capture the ending time
 print(end_time - start_time) # for 9 loops: 1 minute, 6 segs each
 # For 270 Loops: 24 minutes
+# For 45 loops: 14 minutes
 # 9 Scenarios with country level: 140 seg
 
 nrow(df_region_final)/1e6 # 22.6M rows
@@ -505,7 +508,7 @@ df_scen$scen_all %>% unique()
 write.csv(df_scen,"Results/MineralDemand_FewScenarios.csv",row.names = F)
 
 # all scenarios
-# write.csv(df_region_final,"Results/MineralDemandRegion.csv",row.names = F)
+write.csv(df_region_final,"Results/MineralDemandRegion.csv",row.names = F)
 
 df_country_final <- df_country_final %>% 
   mutate(scen_all=paste(Scenario,chem_scenario,capacity_scenario,

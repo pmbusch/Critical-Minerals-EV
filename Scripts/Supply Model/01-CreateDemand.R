@@ -52,6 +52,7 @@ df$t %>% range()
 
 # save results
 write.csv(df,"Parameters/Demand.csv",row.names = F)
+write.csv(df,"Parameters/Demand_AllScenarios.csv",row.names = F)
 write.csv(df_recyc,"Parameters/Recycling.csv",row.names = F)
 write.csv(df_sector,"Parameters/Demand_Detail.csv",row.names = F)
 write.csv(df_region,"Parameters/Demand_Region.csv",row.names = F)
@@ -65,7 +66,8 @@ ggplot(df,aes(t,Demand,group=Scenario))+
   scale_x_continuous(breaks = c(2022,seq(2030,2070,10)))+
   labs(x="",y="Lithium \n Demand \n [ktons]")+
   theme(axis.text.x = element_text(hjust=0.8),
-        legend.position = "bottom")
+        legend.position = "none")
+        # legend.position = "bottom")
 
 # Recycling  
 df_recyc %>% 

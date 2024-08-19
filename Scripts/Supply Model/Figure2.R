@@ -113,6 +113,20 @@ for (i in length(scens_names):1){
 }
 p2a
 
+# add range instead
+range_demand <- range(cum_demand$Mton)
+p2b <- p2+
+  geom_rect(aes(xmin = range_demand[1], xmax = range_demand[2], ymin = -Inf, ymax = Inf), 
+            fill = "lightgray", alpha = 0.01,col="darkgrey")+
+  geom_vline(data=filter(cum_demand,name==scens_names[[1]]),
+             aes(xintercept=Mton),col=scen_colors[1],alpha=.5)+
+  annotate("text",x=30,y=14000,label="Cumulative Demand \nReference Scenario",hjust=0,size=6*5/14*0.8,
+           col=scen_colors[1])+
+  annotate("text",x=37,y=13000,label="Range of Cumulative \nDemand Scenarios",hjust=0,size=6*5/14*0.8,
+           col="darkgrey")
+
+p2b
+
 # Save with width size of letter
 ggsave("Figures/Article/Fig2b.png", ggplot2::last_plot(),
        units="cm",dpi=600,
@@ -151,7 +165,7 @@ p2_tradeoff <- ggplot(data_fig,aes(cost,edb,size=res))+
   geom_text(data=countries,aes(label=Country),x=6000,
             # direction = "x",
             fontface = "italic",
-            size=5*5/14 * 0.8,
+            size=6*5/14 * 0.8,
             hjust=0)+
   # geom_text_repel(aes(label=Country))+
   scale_x_continuous(limits = c(6.2,13.5)*1e3,
@@ -166,7 +180,7 @@ p2_tradeoff <- ggplot(data_fig,aes(cost,edb,size=res))+
         legend.text = element_text(size=6),
         legend.key.height= unit(0.25, 'cm'),
         legend.key.width= unit(0.25, 'cm'),
-        legend.position = c(0.3,0.3))
+        legend.position = c(0.32,0.3))
 p2_tradeoff
 
 ggsave("Figures/Article/Tradeoff.png", ggplot2::last_plot(),
@@ -176,6 +190,20 @@ ggsave("Figures/Article/Tradeoff.png", ggplot2::last_plot(),
 
 # Mosaic Figure --------
 # https://stackoverflow.com/questions/19233365/how-to-create-a-marimekko-mosaic-plot-in-ggplot2
+dict_region <- tibble(
+  Country=c("Argentina","Bolivia","Canada", "Chile","China","Germany",
+            "United States","Afghanistan","Australia","Austria","Brazil", "Czech Republic",
+            "DR Congo", "Ethiopia", "Finland","France", "Ghana","Mali","Namibia",
+            "Portugal", "Russia", "Spain","United Kingdom","Zimbabwe",
+            "Mexico", "Peru", "Serbia", "Tanzania")) %>% 
+  mutate(Region=case_when(
+    Country %in% c("Argentina", "Bolivia", "Chile", "Brazil", "Peru") ~ "South America",
+    Country %in% c("Canada", "United States", "Mexico") ~ "North America",
+    Country %in% c("China", "Afghanistan", "Russia") ~ "Asia",
+    Country %in% c("Germany", "Austria", "Czech Republic", "Finland", "France", 
+                   "Portugal", "Spain", "United Kingdom", "Serbia") ~ "Europe",
+    Country %in% c("DR Congo", "Ethiopia", "Ghana", "Mali", "Namibia", "Zimbabwe", "Tanzania") ~ "Africa",
+    Country == "Australia" ~ "Australia"))
 
 df_country <- deposit %>% 
   # mutate(Resource_Type=Resource_Type_orig) %>% 
@@ -186,26 +214,31 @@ df_country <- deposit %>%
   mutate(resource_all=reserve+resource_demonstrated+resource_inferred) %>% 
   arrange(desc(resource_all)) %>% ungroup()
 
+
 # create stats for display
 data_fig <- df_country %>% 
   # mutate(resource_all=reserve) %>%  # for Reserve analysis
   mutate(Resource_Type=str_replace(Resource_Type,"Volcano-Sedimentary","Volc.-Sed.")) %>% 
   filter(resource_all>0) %>% 
   mutate(Resource_Type=if_else(str_detect(Resource_Type,"Other"),"Other",Resource_Type)) %>% 
+  # aggregate countries
+  left_join(dict_region) %>% 
+  mutate(Country=if_else(resource_all>3 | Resource_Type=="Volc.-Sed.",
+                         Country,paste0("",Region))) %>% 
   group_by(Resource_Type,Country) %>% 
   reframe(resource_all=sum(resource_all)) %>% ungroup() %>% 
   group_by(Resource_Type) %>%
   mutate(total_resources=sum(resource_all),
-         share_resource=resource_all/sum(resource_all)) %>% 
-  mutate(r_label=if_else(resource_all>3,
+         share_resource=resource_all/sum(resource_all))
+
+# add labels  
+data_fig <- data_fig %>% 
+  mutate(r_label=if_else(resource_all>2 & share_resource>0.04,
                          paste0(Country,": ",format(round(resource_all,1),big.mark=","),"M"),"")) %>% 
-  mutate(r_label=if_else(resource_all<1 & Resource_Type=="Other","",r_label)) %>%
-  mutate(r_label_small=if_else(resource_all>0.8 & resource_all<3,
+  mutate(r_label_small=if_else(resource_all>0.8 & resource_all<2 & 
+                                 Resource_Type=="Volc.-Sed.",
                                paste0(Country,": ",format(round(resource_all,1),big.mark=","),"M"),"")) %>% 
-  # remove US-BRINE
-  mutate(r_label_small=if_else(str_detect(Resource_Type,"Brine") & 
-                                 str_detect(r_label_small,"United States"),
-                               "",r_label_small)) %>% 
+  mutate(r_label=str_replace(r_label,"Africa","Rest of Africa")) %>% 
   mutate(c_order_lab=paste0(r_label,r_label_small)) %>% 
   ungroup() %>% mutate(share_type=total_resources/sum(resource_all)) %>% 
   mutate(Resource_Type=paste0(Resource_Type,"\n(",round(share_type*100,0),"%)"))
@@ -248,7 +281,7 @@ ggsave("Figures/Article/Mosaic.png", ggplot2::last_plot(),
 library(cowplot)
 plot_grid(
   plot_grid(p_mosaic,p2_tradeoff,rel_widths = c(1,1)),
-  p2a,nrow=2)
+  p2,nrow=2)
 
 
 ggsave("Figures/Article/Figure2.png", ggplot2::last_plot(),
