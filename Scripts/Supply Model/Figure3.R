@@ -26,6 +26,10 @@ recycling_total <- recycling %>%
   reframe(mtons=sum(Recycling)/1e3) %>% 
   mutate(Resource_Type="Recycling")
 
+# save data to recreate fig
+write.csv(df_results,"Results/Data_Fig3.csv",row.names = F)
+df_results <- read.csv("Results/Data_Fig3.csv")
+
 # get extraction
 data_fig <- df_results %>% 
   left_join(deposit) %>%

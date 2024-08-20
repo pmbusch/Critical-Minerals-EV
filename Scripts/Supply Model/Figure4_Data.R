@@ -11,6 +11,10 @@ source("Scripts/00-Libraries.R", encoding = "UTF-8")
 source("Scripts/Supply Model/02-LoadOptimizationResults.R", encoding = "UTF-8")
 
 
+# save data to recreate fig
+write.csv(df_results,"Results/Data_Fig4.csv",row.names = F)
+df_results <- read.csv("Results/Data_Fig4.csv")
+
 # get difference of opened deposits ------
 
 df <- df_results %>%

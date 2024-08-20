@@ -386,7 +386,7 @@ for scen in unique_scenarios
     println(scen)
     # Filter scenario
     demand_scen = filter(row -> row.Scenario == scen, demandAll)
-    #runOptimization(demand_scen,depositAll,"DemandScenario/$scen",0.1,false)
+    runOptimization(demand_scen,depositAll,"DemandScenario/$scen",0.1,false)
 end
 
 # N-1 COUNTRIES
@@ -402,13 +402,13 @@ for scen in unique_scenarios
     for con in countries
         println(con)
         deposit_c = filter(row -> row.Country != con, depositAll) # N-1, remove that country
-        #runOptimization(demand_scen,deposit_c,"N1_Countries_Demand/$scen/$con/",0.1,false)
+        runOptimization(demand_scen,deposit_c,"N1_Countries_Demand/$scen/$con/",0.1,false)
     end
     # Remove lithium triangle
     deposit_c = filter(row -> row.Country != "Chile", depositAll) # N-1, remove that country
     deposit_c = filter(row -> row.Country != "Bolivia", deposit_c) # N-1, remove that country
     deposit_c = filter(row -> row.Country != "Argentina", deposit_c) # N-1, remove that country
-    #runOptimization(demand_scen,deposit_c,"N1_Countries_Demand/$scen/Lithium Triangle",0.1,false)
+    runOptimization(demand_scen,deposit_c,"N1_Countries_Demand/$scen/Lithium Triangle",0.1,false)
 end
 
     
@@ -416,7 +416,6 @@ end
 # do it for all demand scenarios
 unique_scenarios = unique(demandAll.Scenario)
 #unique_scenarios = ["Ambitious-Baseline-Baseline-Baseline-Baseline"]
-unique_scenarios = ["Ambitious-Solid State adoption-Baseline-Baseline-Baseline"]
 for scen in unique_scenarios
     println(scen)
     # Filter scenario
@@ -449,9 +448,21 @@ demand_scen = filter(row -> row.Scenario == "Ambitious-Baseline-Baseline-Baselin
 # Loop for multiobjective curve
 for i in 1:10
     println(i)
-    runOptimization(demand_scen,depositAll,"EDBCurve/EDBLoop $i",i/10,true)
+    #runOptimization(demand_scen,depositAll,"EDBCurve/EDBLoop $i",i/10,true)
 end
      
+# DEMAND SCENARIOS ALL
+# Extract unique scenarios
+demandAll = DataFrame(CSV.File("Parameters/Demand_AllScenarios.csv"))
+unique_scenarios = unique(demandAll.Scenario)
+for scen in unique_scenarios
+    println(scen)
+    # Filter scenario
+    demand_scen = filter(row -> row.Scenario == scen, demandAll)
+    #runOptimization(demand_scen,depositAll,"DemandScenarioAll/$scen",0.1,false)
+end
+
+
 # MODEL PARAMETERS CHECK
 demand_scen = filter(row -> row.Scenario == "Ambitious-Baseline-Baseline-Baseline-Baseline", demandAll)
 #deposit = DataFrame(CSV.File("Parameters/Deposit_SCCost_2k.csv"))

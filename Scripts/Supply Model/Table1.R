@@ -12,6 +12,12 @@ source("Scripts/00-Libraries.R", encoding = "UTF-8")
 source("Scripts/Supply Model/02-LoadOptimizationResults.R", encoding = "UTF-8")
 
 
+# save data to recreate fig
+write.csv(df_results,"Results/Data_Table1.csv",row.names = F)
+
+# (if decide not to run optimization code, then can preload results, along with the first lines of 
+# the script 02-LoadOptimizationResults.R (load other data required)
+df_results <- read.csv("Results/Data_Table1.csv")
 
 # Table Analysis for Scenarios -------
 
@@ -199,6 +205,10 @@ country_recycling <- df_country_final %>% rename(t=Year) %>%
   filter(Vehicle=="Recycling") %>% 
   group_by(scen_all,Region,Country,t) %>% 
   reframe(Recycling=-sum(tons_mineral)/1e3)
+
+# save it if do not want to run full code above that takes a lot of time
+write.csv(country_recycling,"Results/CountryRecycling.csv",row.names = F)
+country_recycling <- read.csv("Results/CountryRecycling.csv")
 
 # recycling supply by country
 country_recycling <- country_recycling %>% 
