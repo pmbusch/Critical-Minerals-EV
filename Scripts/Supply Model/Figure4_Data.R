@@ -11,9 +11,11 @@ source("Scripts/00-Libraries.R", encoding = "UTF-8")
 source("Scripts/Supply Model/02-LoadOptimizationResults.R", encoding = "UTF-8")
 
 
-# save data to recreate fig
-write.csv(df_results,"Results/Data_Fig4.csv",row.names = F)
-df_results <- read.csv("Results/Data_Fig4.csv")
+# Data to recreate figure is same as Table1 
+# (if decide not to run optimization code, then can preload results, along with the first lines of 
+# the script 02-LoadOptimizationResults.R (load other data required)
+df_results <- read.csv("Results/Data_Table1.csv")
+
 
 # get difference of opened deposits ------
 

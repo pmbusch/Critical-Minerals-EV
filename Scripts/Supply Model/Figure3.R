@@ -26,9 +26,11 @@ recycling_total <- recycling %>%
   reframe(mtons=sum(Recycling)/1e3) %>% 
   mutate(Resource_Type="Recycling")
 
-# save data to recreate fig
-write.csv(df_results,"Results/Data_Fig3.csv",row.names = F)
-df_results <- read.csv("Results/Data_Fig3.csv")
+# Data to recreate figure is same as Table1 
+# (if decide not to run optimization code, then can preload results, along with the first lines of 
+# the script 02-LoadOptimizationResults.R (load other data required)
+df_results <- read.csv("Results/Data_Table1.csv")
+
 
 # get extraction
 data_fig <- df_results %>% 
