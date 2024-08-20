@@ -1,4 +1,4 @@
-# Benefits of Circular Economy and Material Efficiency on the Lithium Mineral Extraction Supply Chain
+# Effects of Demand and Recycling on Future Lithium Extraction
 
 Replication materials for Busch *et al.* (2024), submitted article.
 
