@@ -5,7 +5,8 @@ source("Scripts/00-Libraries.R", encoding = "UTF-8")
 
 # load demand results -----
 # df <- read.csv("Results/MineralDemandRegion.csv")
-df <- read.csv("Results/MineralDemand_FewScenarios.csv") # much faster
+# df <- read.csv("Results/MineralDemand_FewScenarios.csv") # much faster
+df <- read.csv("Results/MineralDemand_RecyclingLoop.csv") # recycling loop
 
 
 # Filter - Lithium for now
@@ -52,7 +53,8 @@ df$t %>% range()
 
 # save results
 write.csv(df,"Parameters/Demand.csv",row.names = F)
-write.csv(df,"Parameters/Demand_AllScenarios.csv",row.names = F)
+# write.csv(df,"Parameters/Demand_AllScenarios.csv",row.names = F)
+write.csv(df,"Parameters/DemandRecyclingLoop.csv",row.names = F)
 write.csv(df_recyc,"Parameters/Recycling.csv",row.names = F)
 write.csv(df_sector,"Parameters/Demand_Detail.csv",row.names = F)
 write.csv(df_region,"Parameters/Demand_Region.csv",row.names = F)

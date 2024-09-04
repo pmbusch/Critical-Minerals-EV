@@ -55,7 +55,31 @@ mat_recovery_recycling <- tibble(recycling_scenarios=recycling_scenarios$recycli
     T ~mat_recov_recyc),
     EU_mat_recov_recyc=NULL,China_mat_recove=NULL)
 
+
+
+# Global recovery scenarios -----
+# not included for EU and China specific targets, same level for all minerals
+# Model all regions like Europe
+
+# constraint of max recycling for each region
+rec_levels <- seq(0.05,0.95,0.1)
+
+
+global_rec_scenarios <- tibble(mat_recov_recyc1=rec_levels,
+                               recycling_scenarios=paste0("Recycling percentage ",round(rec_levels*100,0)),
+                               dummy=1) %>%
+  left_join(mutate(EU_targets,dummy=1), relationship="many-to-many") %>% 
+  mutate(dummy=1) %>% left_join(mutate(China_targets,dummy=1), relationship = "many-to-many") %>% 
+  # EU and China Baseline with regulations
+  left_join(tibble(Region=region_level,dummy=1), relationship = "many-to-many") %>% dplyr::select(-dummy) %>% 
+  mutate(mat_recov_recyc=case_when(
+    Region %in% c("European Union") ~ EU_mat_recov_recyc,
+    Region %in% c("China") ~ China_mat_recove,
+    T ~pmin(EU_mat_recov_recyc,mat_recov_recyc1)),
+    EU_mat_recov_recyc=NULL,China_mat_recove=NULL,mat_recov_recyc1=NULL)
+
+
 rm(EU_targets,China_targets)
-  
+
 
 # EoF

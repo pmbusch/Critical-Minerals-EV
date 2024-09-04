@@ -386,7 +386,7 @@ for scen in unique_scenarios
     println(scen)
     # Filter scenario
     demand_scen = filter(row -> row.Scenario == scen, demandAll)
-    runOptimization(demand_scen,depositAll,"DemandScenario/$scen",0.1,false)
+    #runOptimization(demand_scen,depositAll,"DemandScenario/$scen",0.1,false)
 end
 
 # N-1 COUNTRIES
@@ -402,13 +402,13 @@ for scen in unique_scenarios
     for con in countries
         println(con)
         deposit_c = filter(row -> row.Country != con, depositAll) # N-1, remove that country
-        runOptimization(demand_scen,deposit_c,"N1_Countries_Demand/$scen/$con/",0.1,false)
+        #runOptimization(demand_scen,deposit_c,"N1_Countries_Demand/$scen/$con/",0.1,false)
     end
     # Remove lithium triangle
     deposit_c = filter(row -> row.Country != "Chile", depositAll) # N-1, remove that country
     deposit_c = filter(row -> row.Country != "Bolivia", deposit_c) # N-1, remove that country
     deposit_c = filter(row -> row.Country != "Argentina", deposit_c) # N-1, remove that country
-    runOptimization(demand_scen,deposit_c,"N1_Countries_Demand/$scen/Lithium Triangle",0.1,false)
+    #runOptimization(demand_scen,deposit_c,"N1_Countries_Demand/$scen/Lithium Triangle",0.1,false)
 end
 
     
@@ -423,7 +423,7 @@ for scen in unique_scenarios
     
     # No clay deposits
     deposit_clay = filter(row -> row.Resource_Type != "Volcano-Sedimentary", depositAll) 
-    runOptimization(demand_scen,deposit_clay,"Scenarios_Deposit/$scen/No Clay",0.1,false)
+    #runOptimization(demand_scen,deposit_clay,"Scenarios_Deposit/$scen/No Clay",0.1,false)
 
     # read all excel in the deposit folder
     folder_path = "Parameters/Deposit_scenarios"
@@ -434,7 +434,7 @@ for scen in unique_scenarios
             deposit_s = DataFrame(CSV.File(file_path))
             file_name = splitext(file)[1] # remove CSV
             println("Data from $(file_name):")
-            runOptimization(demand_scen,deposit_s,"Scenarios_Deposit/$scen/$file_name",0.1,false)
+            #runOptimization(demand_scen,deposit_s,"Scenarios_Deposit/$scen/$file_name",0.1,false)
         end
     end
 end
@@ -463,6 +463,19 @@ for scen in unique_scenarios
 end
 
 
+# RECYCLING LOOP DEMAND SCENARIOS
+# Extract unique scenarios
+demandRec = DataFrame(CSV.File("Parameters/DemandRecyclingLoop.csv"))
+unique_scenarios = unique(demandRec.Scenario)
+for scen in unique_scenarios
+    println(scen)
+    # Filter scenario
+    demand_scen = filter(row -> row.Scenario == scen, demandRec)
+    runOptimization(demand_scen,depositAll,"DemandRecyclingLoop/$scen",0.1,false)
+end
+
+
+
 # MODEL PARAMETERS CHECK
 demand_scen = filter(row -> row.Scenario == "Ambitious-Baseline-Baseline-Baseline-Baseline", demandAll)
 #deposit = DataFrame(CSV.File("Parameters/Deposit_SCCost_2k.csv"))
@@ -475,6 +488,8 @@ demand_scen = filter(row -> row.Scenario == "Ambitious-Baseline-Baseline-Baselin
 #runOptimization(demand_scen,deposit,"ParameterCheck/Deposit_LCEPrice_30k",0.1,false)
 #deposit = DataFrame(CSV.File("Parameters/Deposit_LCEPrice_40k.csv"))
 #runOptimization(demand_scen,deposit,"ParameterCheck/Deposit_LCEPrice_40k",0.1,false)
+
+
 
 
 

@@ -93,14 +93,18 @@ weighted_avg_index <- function(vec) {
 # Do Loop for all demand scenarios - to make sure calculation are correct
 # Bad part more data storage and calculations needed, but could be worth it
 
-scen_level <- c("Baseline","Momentum","Ambitious")
-# scen_level <- c("Ambitious")
+# scen_level <- c("Baseline","Momentum","Ambitious")
+scen_level <- c("Ambitious")
 chems_scen <- c("Baseline","Double LFP","Double NMC 811",
                 "Solid State adoption","Sodium Battery adoption")
+chems_scen <- c("Baseline")
 capacity_scen <- c("Baseline","Low Range","High Range")
 lifetime_scen <- c("Baseline","Long duration")
 lifetime_scen <- c("Baseline")
 recycling_scen <- recycling_scenarios$recycling_scenario %>% unique()
+# global rec scenarios
+recycling_scen <- global_rec_scenarios$recycling_scenarios %>% unique()
+mat_recovery_recycling <- global_rec_scenarios
 
 # results
 df_region_final <- c()
@@ -200,6 +204,11 @@ for (scen in scen_level){
           perc_ssps <- recycling_scenarios %>% 
             filter(recycling_scenario==scen_recyc) %>% 
             pull(ssps_perc)
+          
+          # for recycling scenarios loop, perc SSPS is 50% by default
+          if(length(perc_ssps)==0){
+            perc_ssps=0.5
+          }
           
           reuse_car <- reuse_car %>%
             mutate(perc_lib_ssps=perc_lib_available*perc_ssps,
@@ -502,10 +511,13 @@ nrow(df_country_final)/1e6 # 10.4M rows for 9 scenarios
 df_scen <- df_region_final %>% 
   mutate(scen_all=paste(Scenario,chem_scenario,
                         capacity_scenario,
-                        lifetime_scenario,recycling_scenario,sep="-")) %>% 
-  filter(scen_all %in% scens_selected)
+                        lifetime_scenario,recycling_scenario,sep="-"))
+  # filter(scen_all %in% scens_selected)
 df_scen$scen_all %>% unique()
-write.csv(df_scen,"Results/MineralDemand_FewScenarios.csv",row.names = F)
+# write.csv(df_scen,"Results/MineralDemand_FewScenarios.csv",row.names = F)
+# recycling loop
+write.csv(df_scen,"Results/MineralDemand_RecyclingLoop.csv",row.names = F)
+
 
 # all scenarios
 write.csv(df_region_final,"Results/MineralDemandRegion.csv",row.names = F)
@@ -514,6 +526,7 @@ df_country_final <- df_country_final %>%
   mutate(scen_all=paste(Scenario,chem_scenario,capacity_scenario,
                         lifetime_scenario,recycling_scenario,sep="-"))
 write.csv(df_country_final,"Results/MineralDemand_FewScenarios_Country.csv",row.names = F)
+
 
 
 # write.csv(df,"Results/MineralDemand.csv",row.names = F)
