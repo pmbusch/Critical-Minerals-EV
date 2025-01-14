@@ -1,6 +1,5 @@
 # Run Optimization Model with demand and deposits paramters created previously
 # Has a user-defined function to run an optimization model
-# Has loops to run all the desired scenarios.
 # PBH November 2024
 
 using CSV
@@ -21,7 +20,10 @@ demandAll = DataFrame(CSV.File("Nickel/Parameters/Demand.csv"))
 # - Deposits parameters
 # - Save folder 
 # - degradationLimit: Set to zero for single objective optimization
-function runOptimization(demand,deposit,saveFolder, degradationLimit,sp)
+# - discount rate
+# - cost to not met demand (slack) - historic high price: 54000 USD per ton
+# - use an hyperbolic discount rate (default is false)
+function runOptimization(demand,deposit,saveFolder, degradationLimit,discount_rate = 0.07,bigM_cost = 54000/1e3,hyperbolic=false)
     
     d_size = size(deposit, 1) 
     t_size = size(demand, 1)
@@ -52,10 +54,6 @@ function runOptimization(demand,deposit,saveFolder, degradationLimit,sp)
     
     # Set big M values
     bigM_extract = maximum(max_prod_rate)
-    # historic high: 68000 USD per LCE
-    #bigM_cost = 1e6
-    bigM_cost = 100000*5.323/1e3
-    
     
     # Planned capacity over time, towards 2030
     prod_rate = zeros(d_size, t_size)
@@ -76,8 +74,12 @@ function runOptimization(demand,deposit,saveFolder, degradationLimit,sp)
     end
     
     # Discount rates for costs
-    discount_rate = 0.07
-    discounter = (1 .+ discount_rate) .^(0:size(demand, 1) - 1)
+      # Discount rates for costs
+    if hyperbolic
+        discounter = 1 .+ discount_rate .*(0:size(demand, 1) - 1) # hyperbolic discount rate
+    else
+        discounter = (1 .+ discount_rate) .^(0:size(demand, 1) - 1)
+    end
     
     cost_extraction = cost_extraction .* (1 ./ discounter')
     cost_opening = cost_opening .* (1 ./ discounter')
@@ -95,65 +97,65 @@ function runOptimization(demand,deposit,saveFolder, degradationLimit,sp)
     # Big M effect, should be reduced towards the future?
     bigM_cost = bigM_cost .* (1 ./ discounter') 
     
-    @time begin
-        # Create optimization model
-        model = Model(Gurobi.Optimizer)
-        
-        # Decision variables
-        @variable(model, x[1:d_size, 1:t_size] >= 0)  # Extraction
-        @variable(model, y[1:d_size, 1:t_size] >= 0)  # Additional capacity
-        @variable(model, w[1:d_size, 1:t_size], Bin)  # Open or not
-        @variable(model, z[1:t_size] >= 0)  # Slack to match balance
-        
-        # Objective function
-        @objective(model, Min, sum(cost_extraction[d, t] * x[d, t] +
-        cost_expansion[d, t] * y[d, t] +
-        cost_opening[d, t] * w[d, t] for d in 1:d_size, t in 1:t_size) +
-        sum(bigM_cost[t] * z[t] for t in 1:t_size))
-        
-        # ATTEMPT TO FIX MULTIOBJECTIVE PROBLEM
-        optimize!(model)  # QUICK RUN TO AVOID WEIRD ERROR WITH MULTI OBJECTIVE CODE
-
-        # Constraints
-        # Extraction less than available production capacity
-        @constraint(model, c1[d in 1:d_size, t in 1:t_size], x[d, t] <= sum(y[d, t1] for t1 in 1:t) + prod_rate[d,t])
-        # Met demand
-        @constraint(model, c2[t in 1:t_size], sum(x[d, t] for d in 1:d_size) + z[t] >= demand[t])
-        # Max depletion of resources
-        @constraint(model, c3[d in 1:d_size], sum(x[d, t] for t in 1:t_size) <= resources[d])
-        # Max production rate only on open mines
-        @constraint(model, c6[d in 1:d_size, t in 1:t_size], sum(y[d, t1] for t1 in 1:t) + prod_rate[d,t] <= sum(w[d, t1] for t1 in 1:t) * max_prod_rate[d])
-        # Open mine only once
-        @constraint(model, c7[d in 1:d_size], sum(w[d, t] for t in 1:t_size) <= 1)
-        # Max Ramp up
-        @constraint(model, c8[d in 1:d_size, t in 1:t_size], y[d, t] <= max_ramp_up[d])
+    # OPTIMIZATION MODEL
+    # Create optimization model
+    model = Model(Gurobi.Optimizer)
     
-        
-        if degradationLimit>0
-            # Second objective: Non monetary Factors
-            # see: https://github.com/jump-dev/Gurobi.jl/issues/294
-            # https://github.com/jump-dev/Gurobi.jl/pull/295        
-            
-      
-            MOI.set(model,Gurobi.NumberOfObjectives(),2)  # Multiobjective
-            
-            # Minimize EDB to expand capacity in countries
-            f2 = @expression(model, sum(edb[d]*sum(y[d,t] for t in 1:t_size) for d in 1:d_size))
-            MOI.set(model, Gurobi.MultiObjectiveFunction(2), moi_function(f2))
-            # Set the relative tolerance for the second objective
-            # EDB is optimized within 10% of the solution based solely on costs
-            MOI.set(model,Gurobi.MultiObjectiveAttribute(1,"ObjNRelTol"),degradationLimit) # index start at 0, annoying behavior
-            
-            # STATUS OCT 24: Code no longer work with priority, but if I run it without it and then again it works!
-            # Note that set priority is needed to run the hierarchical model
-            # SOLUTION SO FAR: RUN OPTIMIZE WITH NO CONSTRAINTS AND THEN CODE WORKS 
+    # Decision variables
+    @variable(model, x[1:d_size, 1:t_size] >= 0)  # Extraction
+    @variable(model, y[1:d_size, 1:t_size] >= 0)  # Additional capacity
+    @variable(model, w[1:d_size, 1:t_size], Bin)  # Open or not
+    @variable(model, z[1:t_size] >= 0)  # Slack to match balance
+    
+    # Objective function
+    @objective(model, Min, sum(cost_extraction[d, t] * x[d, t] +
+    cost_expansion[d, t] * y[d, t] +
+    cost_opening[d, t] * w[d, t] for d in 1:d_size, t in 1:t_size) +
+    sum(bigM_cost[t] * z[t] for t in 1:t_size))
+    
+    # ATTEMPT TO FIX MULTIOBJECTIVE PROBLEM
+    optimize!(model)  # QUICK RUN TO AVOID WEIRD ERROR WITH MULTI OBJECTIVE CODE
 
-            # Priority
-            MOI.set(model, Gurobi.MultiObjectivePriority(1), 10)
-            MOI.set(model, Gurobi.MultiObjectivePriority(2), 5)      
-        end
-        optimize!(model)
+    # Constraints
+    # Extraction less than available production capacity
+    @constraint(model, c1[d in 1:d_size, t in 1:t_size], x[d, t] <= sum(y[d, t1] for t1 in 1:t) + prod_rate[d,t])
+    # Met demand
+    @constraint(model, c2[t in 1:t_size], sum(x[d, t] for d in 1:d_size) + z[t] >= demand[t])
+    # Max depletion of resources
+    @constraint(model, c3[d in 1:d_size], sum(x[d, t] for t in 1:t_size) <= resources[d])
+    # Max production rate only on open mines
+    @constraint(model, c6[d in 1:d_size, t in 1:t_size], sum(y[d, t1] for t1 in 1:t) + prod_rate[d,t] <= sum(w[d, t1] for t1 in 1:t) * max_prod_rate[d])
+    # Open mine only once
+    @constraint(model, c7[d in 1:d_size], sum(w[d, t] for t in 1:t_size) <= 1)
+    # Max Ramp up
+    @constraint(model, c8[d in 1:d_size, t in 1:t_size], y[d, t] <= max_ramp_up[d])
+
+    
+    if degradationLimit>0
+        # Second objective: Non monetary Factors
+        # see: https://github.com/jump-dev/Gurobi.jl/issues/294
+        # https://github.com/jump-dev/Gurobi.jl/pull/295        
+        
+  
+        MOI.set(model,Gurobi.NumberOfObjectives(),2)  # Multiobjective
+        
+        # Minimize EDB to expand capacity in countries
+        f2 = @expression(model, sum(edb[d]*sum(y[d,t] for t in 1:t_size) for d in 1:d_size))
+        MOI.set(model, Gurobi.MultiObjectiveFunction(2), moi_function(f2))
+        # Set the relative tolerance for the second objective
+        # EDB is optimized within 10% of the solution based solely on costs
+        MOI.set(model,Gurobi.MultiObjectiveAttribute(1,"ObjNRelTol"),degradationLimit) # index start at 0, annoying behavior
+        
+        # STATUS OCT 24: Code no longer work with priority, but if I run it without it and then again it works!
+        # Note that set priority is needed to run the hierarchical model
+        # SOLUTION SO FAR: RUN OPTIMIZE WITH NO CONSTRAINTS AND THEN CODE WORKS 
+
+        # Priority
+        MOI.set(model, Gurobi.MultiObjectivePriority(1), 10)
+        MOI.set(model, Gurobi.MultiObjectivePriority(2), 5)      
     end
+    optimize!(model)
+
     
    
     # get and store results
@@ -219,21 +221,3 @@ function runOptimization(demand,deposit,saveFolder, degradationLimit,sp)
 
 end
 
-# Loops, comment/uncomment to run
-
-# Single Run - DEBUG
-demandBase = filter(row -> row.Scenario == "Ambitious-Baseline-Baseline-Baseline-Baseline", demandAll)
-#deposittest = DataFrame(CSV.File("Parameters/Deposit_New.csv"))
-runOptimization(demandBase,depositAll,"Base",0.1,false)
-
-# DEMAND SCENARIOS
-# Extract unique scenarios
-unique_scenarios = unique(demandAll.Scenario)
-for scen in unique_scenarios
-    println(scen)
-    # Filter scenario
-    demand_scen = filter(row -> row.Scenario == scen, demandAll)
-    #runOptimization(demand_scen,depositAll,"DemandScenario/$scen",0.1,false) # UNCOMMENT TO RUN LOOP
-end
-
-# End of File
