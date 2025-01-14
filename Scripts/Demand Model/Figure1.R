@@ -4,10 +4,11 @@
 
 
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
+source("Scripts/01-CommonVariables.R", encoding = "UTF-8")
+
 
 demand <- read.csv("Parameters/Demand.csv")
 demandSector <- read.csv("Parameters/Demand_Detail.csv")
-deposit <- read.csv("Parameters/Deposit.csv")
 demandRegion <- read.csv("Parameters/Demand_Region.csv")
 
 # rec capacity 2050
@@ -25,7 +26,9 @@ data_fig1 <- demand %>%
   group_by(Scenario,t) %>%
   reframe(kton=sum(Demand)) %>% ungroup() %>% 
   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
-  mutate(scen_num=substr(name,1,3))
+  mutate(name=factor(name,levels=scens_names)) %>% 
+  mutate(scen_num=str_extract(name,paste(paste0("\\(",1:11,"\\)"),collapse="|")))
+
 
 cum_demand <- data_fig1 %>% group_by(name) %>% 
   reframe(Mton=sum(kton)/1e3) %>% ungroup() %>% arrange(desc(Mton))
@@ -50,19 +53,20 @@ p1 <- ggplot(data_fig1)+
   geom_text(data=filter(data_fig1,t==2050),show.legend = F,
             aes(label=scen_num,y=kton,col=name),x=2050.5,
             size=6*5/14 * 0.8,
-            # order: 1,8,9,2,3,5,4,7,6
-            nudge_y = c(0,1.7,0,-0.5,0,-1,1,-1.2,0)*5e1)+
-  coord_cartesian(expand=F,xlim=c(2022,2051))+
+            # order: 1,8,9,10,2,3,11,5,4,7,6
+            nudge_y = c(0,1.7,-0.5,-0.8,0,0,1,-1,1,-1.2,0)*5e1)+
+  coord_cartesian(expand=F,xlim=c(2022,2051.1),
+                  ylim=c(0,max(data_fig1$kton)*1.02))+
   labs(x="",y="",col="Demand Scenario",
-       title="(A) Lithium Demand [ktons]")+
+       title="(A) Primary Lithium Demand [ktons]")+
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
   scale_y_continuous(limits = c(0,NA),labels = scales::comma_format(big.mark = ' '))+
   scale_color_manual(values = scen_colors)+
   theme(panel.spacing.x = unit(0.7, "cm"),
-        axis.text.x = element_text(hjust = 1,size=9),
+        axis.text.x = element_text(size=9),
         axis.text.y = element_text(size=9),
         # legend.position = "none",
-        legend.position = c(0.18,0.69),
+        legend.position = c(0.18,0.65),
         legend.text = element_text(size=5.5),
         legend.background = element_rect(fill = "transparent", color = NA),
         legend.key.height= unit(0.25, 'cm'),
@@ -86,27 +90,34 @@ data_fig1a <- demandSector %>%
   group_by(Scenario,Sector) %>% 
   reframe(Demand=sum(Demand)/1e6) %>% 
   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
-  mutate(name=substr(name,1,3))
+  mutate(name=paste0("#",str_extract(name,paste(paste0(11:1),collapse = "|")))) %>% 
+  mutate(name=factor(name,levels=paste0("#",1:11)))
+
 
 p1a <- ggplot(data_fig1a,aes(name,Demand,fill=Sector))+
   geom_col(col="black",linewidth=0.1)+
   scale_fill_viridis_d(option = 7)+
-  labs(x="Scenario",y="",title = "(B) Cumulative Demand [Mtons]",
+  labs(x="Demand Scenario",y="",title = "(B) 2022-2050 Demand [Mtons]",
        fill="")+
   theme(axis.text.y = element_text(size=9),
-        axis.text.x = element_text(size=8.5),
+        axis.text.x = element_text(size=5.5),
         legend.text = element_text(size=6))
 p1a
 
 
 # save as panel
 
-cowplot::plot_grid(p1,p1a,ncol=2,rel_widths = c(0.63,0.37))
+cowplot::plot_grid(p1,p1a,ncol=2,rel_widths = c(0.61,0.39))
 
-# Save with widht size of letter
+# Save with width size of letter
 ggsave("Figures/Article/Fig1.png", ggplot2::last_plot(),
        units="cm",dpi=600,
        width=18.4,height=6.4)
+
+pdf("Figures/Article/Fig1.pdf",width=18.4/2.54,height=6.4/2.54)
+ggplot2::last_plot()
+dev.off()
+
 
 
 # Cumulative demand by region
@@ -126,12 +137,13 @@ data_fig <- demandRegion %>%
   filter(t<2051) %>% 
   group_by(Scenario,Region) %>%
   reframe(Demand=sum(Demand)/1e6) %>% ungroup() %>% 
-  left_join(tibble(Scenario=scens_selected,name=scens_names))
+  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
+  mutate(name=factor(name,levels=scens_names))
 
 
 ggplot(data_fig,aes(name,Demand,fill=Region))+
   geom_col(col="black",linewidth=0.1)+
-  coord_flip(ylim=c(0,38),expand = F)+
+  coord_flip(ylim=c(0,42),expand = F)+
   guides(fill= guide_legend(reverse = T,byrow=T))+
   scale_x_discrete(limits=rev)+
   scale_fill_manual(values=c("Middle East/Africa"="#D16D6F","Asia Pacific/Oceania"="#cab2d6",

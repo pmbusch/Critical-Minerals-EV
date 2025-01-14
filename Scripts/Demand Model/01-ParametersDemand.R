@@ -7,8 +7,9 @@ library(tidyverse)
 # LDV Survival Parameters --------------
 
 recycling_scenarios <- 
-  tibble(recycling_scenario = c("Baseline","Enhanced recycling","Enhanced SSPS"),
-         ssps_perc = c(0.5,0.3,0.7)) %>% 
+  tibble(recycling_scenario = c("Baseline","Enhanced recycling","Enhanced SSPS",
+                                "USA Recycling","Recycling Medium"),
+         ssps_perc = c(0.5,0.3,0.7,0.5,0.3)) %>% 
   mutate(recycling_perc = 1-ssps_perc)
 
 
@@ -35,6 +36,7 @@ EU_targets <- tibble(
     T ~ mat_recov_recyc2)) %>% 
   dplyr::select(-mat_recov_recyc1,-mat_recov_recyc2,-dummy)
 
+# Levels right now
 China_targets <- tibble(
   Mineral=c("Lithium","Nickel","Cobalt","Manganese","Phosphorus"),
   China_mat_recove=c(0.85,0.98,0.98,0.98,0))
@@ -55,6 +57,24 @@ mat_recovery_recycling <- tibble(recycling_scenarios=recycling_scenarios$recycli
     T ~mat_recov_recyc),
     EU_mat_recov_recyc=NULL,China_mat_recove=NULL)
 
+
+# Scenario for USA adopting EU standards
+# copy/paste above code and change USA
+mat_recovery_recycling_USA <- tibble(recycling_scenarios=recycling_scenarios$recycling_scenario) %>% 
+  mutate(dummy=1) %>% left_join(mutate(EU_targets,dummy=1), relationship = "many-to-many") %>% 
+  mutate(dummy=1) %>% left_join(mutate(China_targets,dummy=1), relationship = "many-to-many") %>% 
+  mutate(mat_recov_recyc=case_when(
+    recycling_scenarios=="Baseline" ~ 0.05,
+    recycling_scenarios=="Enhanced recycling" ~ EU_mat_recov_recyc,
+    recycling_scenarios=="Enhanced SSPS" ~ 0.05)) %>% 
+  # EU and China Baseline with regulations
+  left_join(tibble(Region=region_level,dummy=1), relationship = "many-to-many") %>% dplyr::select(-dummy) %>% 
+  mutate(mat_recov_recyc=case_when(
+    Region %in% c("European Union","United States") ~ EU_mat_recov_recyc,
+    Region %in% c("China") ~ China_mat_recove,
+    T ~mat_recov_recyc),
+    EU_mat_recov_recyc=NULL,China_mat_recove=NULL) %>% 
+  filter(recycling_scenarios=="Baseline")
 
 
 # Global recovery scenarios -----

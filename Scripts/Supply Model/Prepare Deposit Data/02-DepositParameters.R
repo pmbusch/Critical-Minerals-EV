@@ -4,7 +4,7 @@
 
 # LOAD DATA ---------
 # Load all deposit data
-source("Scripts/Optimization/Prepare Deposit Data/01-LoadDepositData.R", encoding = "UTF-8")
+source("Scripts/Supply Model/Prepare Deposit Data/01-LoadDepositData.R", encoding = "UTF-8")
 
 url_fig <- "Figures/Deposit/%s.png"
 
@@ -328,7 +328,7 @@ df %>% filter(resource_demostrated==0,resource_inferred>0) %>%
 
 
 # Max Production Rate ---------
-# 5% max depletion rate for hard rock and 3% for others (DLE) and 
+# 5% max depletion rate for hard rock and 3% for others (DLEc and clay) and 
 # 1% for evaporation
 dep_rate <- tibble(Resource_Type=unique(df$Resource_Type)) %>% 
   mutate(dep_rate=case_when(
@@ -370,14 +370,20 @@ df %>% filter(!is.na(USD_pertonne_Li)) %>% nrow()
 # Stage 1
 df <- df %>% 
   left_join(coefs) %>%  
-  mutate(cost1=case_when(
-         !is.na(USD_pertonne_Li) ~ USD_pertonne_Li, # use cost
-         !is.na(reserve) & !is.na(Grade_percLi_Reserve) & 
-           Resource_Type!="Volcano-Sedimentary" ~ # avoid reg for volcano
-           cExt_Intercept+cExt_Grade_percLi_Reserve*Grade_percLi_Reserve,
+  mutate(cost_source=case_when(
+    !is.na(USD_pertonne_Li) ~ "Report", 
+    !is.na(reserve) & !is.na(Grade_percLi_Reserve) & 
+      Resource_Type!="Volcano-Sedimentary" ~ "Regression",
+    T ~ "Quantile"),
+    cost1=case_when(
+      !is.na(USD_pertonne_Li) ~ USD_pertonne_Li, # use cost
+      !is.na(reserve) & !is.na(Grade_percLi_Reserve) & 
+        Resource_Type!="Volcano-Sedimentary" ~ # avoid reg for volcano
+        cExt_Intercept+cExt_Grade_percLi_Reserve*Grade_percLi_Reserve,
          T ~ NA)) %>% 
   mutate(cost1=if_else(cost1>0,cost1,NA))
 
+table(df$cost_source)
 ggplot(df,aes(cost1,fill=Resource_Type))+geom_density(alpha=.4)
 
 df %>% filter(!is.na(cost1)) %>% nrow()
@@ -391,6 +397,8 @@ df %>% filter(!is.na(cost1)) %>% nrow()
           avg_cost3=quantile(cost1,0.99,na.rm=T)-avg_cost1,
           max_cost=max(cost1,na.rm = T)-avg_cost1,
           n=sum(!is.na(cost1))))
+
+# Note: with weighted quantiles it does not change that much
 
 # For volcano-sedimentary there are not enough data points
 # USE quantiles from every deposit then
@@ -476,14 +484,15 @@ df <- df %>%
 
 ggplot(df,aes(cost3,col=Resource_Type))+stat_ecdf()
 
-# Last check up
+# Last check up - should be zero
 df %>% filter(cost1>cost2) %>% nrow()
 df %>% filter(cost2>cost3) %>% nrow()
 
 ## Royalties ----------
 
 # Need to have the Table S7 from the Article
-royalty <- read_excel(sprintf(url_file,"Table S7.xlsx"),sheet="Taxes",range="A4:D42")
+royalty <- read_excel(sprintf(url_file,"Nature Sust Submission/Data S3.xlsx"),
+                      sheet="Taxes",range="A4:D42")
 names(royalty) <- c("Country","Corporate_Tax_Rate","Royalty_Rate","Royalty_Based")
 royalty <- royalty %>% 
   mutate(Royalty_Rate=as.numeric(Royalty_Rate)) %>% 
@@ -533,16 +542,19 @@ df %>%
   
 # for cost 2 and cost 3
 df <- df %>% 
-  mutate(cost1=cost1+royalty+tax_cost) %>% 
+  mutate(cost1_noTax=cost1,
+         cost1=cost1+royalty+tax_cost) %>% 
   mutate(royalty2=if_else(Royalty_Based=="Profit",
                           (li_price-cost2)*Royalty_Rate,
                           royalty),
          tax_cost2=(li_price-cost2)*Corporate_Tax_Rate,
+         cost2_noTax=cost2,
          cost2=cost2+royalty2+tax_cost2,
          royalty3=if_else(Royalty_Based=="Profit",
                           (li_price-cost3)*Royalty_Rate,
                           royalty),
          tax_cost3=(li_price-cost3)*Corporate_Tax_Rate,
+         cost3_noTax=cost3,
          cost3=cost3+royalty3+tax_cost3)
 
 
@@ -639,6 +651,15 @@ df <- df %>%
     T ~ "No Info"))
 table(df$Status_Delay)
 
+# DELAY - years to avoid any expansion (starting from 2022)
+df <- df %>% 
+  mutate(delay_years=case_when(
+    Status_Delay=="Open" ~ 3, # no expansion until 2025
+    Status_Delay=="Construction" ~ 5, # until 2027 
+    Status_Delay=="Evaluation" ~ 8, # until 2030
+    Status_Delay=="No Info" ~ 10, # until 2032
+      T ~ 10))
+table(df$delay_years)
 
 # Fix issue that current production rate should be less or equal to max prod rate.
 df <- df %>%
@@ -667,15 +688,32 @@ df <- df %>% left_join(edb) %>%
   # mutate(edb=if_else(open_mine==T,100,edb)) %>%  # if opened, no cost
   mutate(edb=100-edb) # from 0 (better) to 100, to minimize
 
+# WGI - Political Stability
+
+wgi <- read.csv("Data/Supply Model/WGI.csv")
+range(wgi$wgi)
+df <- df %>% left_join(wgi) %>% 
+  mutate(wgi=2.5-wgi) # to minimize, 0 to 5
+
+# WCR - World Competitive Ranking
+# All NAs were filled with 20 (worst)
+wcr <- read.csv("Data/Supply Model/WCR.csv")
+range(wcr$wcr)
+df <- df %>% left_join(wcr) %>% 
+  mutate(wcr=100-wcr) # from 0 (better) to 100, to minimize
+
+
 # save -----
 # Select only required columns
 df <- df %>% dplyr::select(Country,Deposit_Name,Resource_Type,Latitude,Longitude,
                            Status,Status_Delay,Grade_percLi_Reserve,grade_resource,grade_resource_inferred,
                            open_mine,reserve,resource_demostrated,resource_inferred,all_resource,
                            cost1,cost2,cost3,max_prod_rate,max_ramp_up,cost_expansion,
-                           cost_opening,
+                           cost_opening,cost_source,
                            prod_rate2022,prod_rate2023,prod_rate2025,prod_rate2030,
-                           Resource_Type_orig,edb)
+                           delay_years,
+                           Resource_Type_orig,edb,wgi,wcr,
+                           Corporate_Tax_Rate,cost1_noTax,cost2_noTax,cost3_noTax)
 # add rownames
 df <- df %>% rownames_to_column() %>% rename(d=rowname)
 df$d <- as.numeric(df$d)
@@ -756,6 +794,15 @@ df <- df %>%
   mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2025,max_prod_rate,prod_rate2025)) %>% 
   mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2030,max_prod_rate,prod_rate2030))
 df <- df %>% mutate(max_ramp_up=max_prod_rate/4)
+# Additional CAPEX and lower OPEX for DLE
+# CAPEX: $1500 per tpa LCE
+# OPEX: -$900 per ton LCE
+df <- df %>% 
+  mutate(cost_expansion=cost_expansion+
+           if_else(Resource_Type=="Brine",1.5*5.323,0),
+         cost1=cost1-if_else(Resource_Type=="Brine",900*5.323,0),
+         cost2=cost2-if_else(Resource_Type=="Brine",900*5.323,0),
+         cost3=cost3-if_else(Resource_Type=="Brine",900*5.323,0))
 write.csv(df,sprintf(url_scen,"AllDLE_prodRate"),row.names = F)
 
 # NO DLE
@@ -772,6 +819,29 @@ df <- df %>%
 df <- df %>% mutate(max_ramp_up=max_prod_rate/4)
 write.csv(df,sprintf(url_scen,"noDLE_prodRate"),row.names = F)
 
+## Lead Times -----
+df <- df_orig %>% 
+  mutate(delay_years=case_when(
+    Status_Delay=="Open" ~ 3, # no expansion until 2025
+    Status_Delay=="Construction" ~ 4, # until 2026 
+    Status_Delay=="Evaluation" ~ 6, # until 2028
+    Status_Delay=="No Info" ~ 8, # until 2030
+    T ~ 8))
+table(df$delay_years)
+write.csv(df,sprintf(url_scen,"shorter_LeadTime"),row.names = F)
+
+df <- df_orig %>% 
+  mutate(delay_years=case_when(
+    Status_Delay=="Open" ~ 3, # no expansion until 2025
+    Status_Delay=="Construction" ~ 5, # until 2027 
+    Status_Delay=="Evaluation" ~ 10, # until 2032
+    Status_Delay=="No Info" ~ 14, # until 2036
+    T ~ 14))
+table(df$delay_years)
+write.csv(df,sprintf(url_scen,"longer_LeadTime"),row.names = F)
+
+
+
 ## Just Demostrated Resources -----
 df <- df_orig %>% 
   mutate(dep_rate=max_prod_rate/all_resource) %>% 
@@ -786,6 +856,24 @@ df <- df %>%
   mutate(max_prod_rate=if_else(max_prod_rate>prod_rate2030,max_prod_rate,prod_rate2030))
 df <- df %>% mutate(max_ramp_up=max_prod_rate/4)
 write.csv(df,sprintf(url_scen,"NoInferredResources"),row.names = F)
+
+# No tax or royalties
+df <- df_orig %>% 
+  mutate(cost1=cost1_noTax,cost2=cost2_noTax,cost3=cost3_noTax)
+write.csv(df,sprintf(url_scen,"NoTax"),row.names = F)
+
+# Hard Rock 20% more expensive due to off-site transport OPEX
+df <- df_orig %>% 
+  mutate(cost1=cost1*if_else(Resource_Type=="Hard Rock",1.2,1),
+         cost2=cost2*if_else(Resource_Type=="Hard Rock",1.2,1),
+         cost3=cost3*if_else(Resource_Type=="Hard Rock",1.2,1))
+write.csv(df,sprintf(url_scen,"RockTransportCosts"),row.names = F)
+
+
+# Not USA for 14 years
+df <- df_orig %>% 
+  mutate(delay_years=if_else(Country=="United States",14,delay_years))
+write.csv(df,sprintf(url_scen,"Delay14USA"),row.names = F)
 
 
 # Figure all Curve Costs --------------

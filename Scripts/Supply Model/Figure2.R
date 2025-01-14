@@ -4,6 +4,7 @@
 
 
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
+source("Scripts/01-CommonVariables.R", encoding = "UTF-8")
 
 demand <- read.csv("Parameters/Demand.csv")
 demandSector <- read.csv("Parameters/Demand_Detail.csv")
@@ -27,7 +28,7 @@ cum_demand <- demand %>%
 data_fig <- deposit %>% 
   dplyr::select(Deposit_Name,Resource_Type,Status,
                 reserve,resource_demostrated,resource_inferred,
-                cost1,cost2,cost3) %>% 
+                cost1,cost2,cost3,cost_source) %>% 
   # average cost by stage size
   mutate(cost=(cost1*reserve+cost2*resource_demostrated+cost3*resource_inferred)/
            (reserve+resource_demostrated+resource_inferred),
@@ -40,6 +41,7 @@ data_fig <- deposit %>%
          reserve_cum_start=lag(reserve_cum_end,default = 0)) %>% 
   mutate(lab_dep=if_else(li_size>1.1,Deposit_Name,"")) %>% 
   mutate(lab_pos=reserve_cum_start+li_size/2) %>% 
+  mutate(report_cost=factor(if_else(cost_source=="Report","Report","Quantile"))) %>% 
   mutate(Status=case_when(
     Status %in% c("Producing","Construction","Suspended",
                   "Producing & suspended","Restarting") ~ "Open or under Construction",
@@ -64,13 +66,14 @@ lim_y <- ceiling(max(data_fig$cost)/500)*500
 even_row <- data_fig$even_row
 
 p2 <- ggplot(data_fig,aes(reserve_cum_start,cost,group=1))+
-  geom_step(linewidth=0.75,direction = "hv",alpha=0.7,
+  geom_step(linewidth=0.75,direction = "hv",
+            alpha=0.7,
             aes(col=Resource_Type))+
   geom_text_repel(aes(x=lab_pos,label=lab_dep),col="black",alpha=.9,
                   min.segment.length = 0.1,
                   segment.color = "darkgrey", segment.size = 0.3,
                   nudge_y = 1000*even_row,size=7*5/14 * 0.8)+
-  labs(x="Cumulative Resources [ktons Li]",y="Extraction Cost\n[USD/ton LCE]",
+  labs(x="Cumulative Resources [million tons Li]",y="Extraction Cost\n[USD/ton LCE]",
        title="(C) Lithium Cumulative Availability Curve",
        col="Resource type")+
   coord_cartesian(xlim = c(0,lim_x),expand = F,ylim=c(NA,lim_y))+
@@ -78,6 +81,7 @@ p2 <- ggplot(data_fig,aes(reserve_cum_start,cost,group=1))+
   # scale_alpha_manual(values = c("Feasibility or Permitting" = 0.6, 
   # "Exploration"=0.3,
   # "Open or under Construction" = 1)) +
+  # scale_alpha_manual(values = c("Report"=1,"Quantile" = 0.3, "Regression"=0.6)) +
   scale_y_continuous(labels = scales::comma_format(big.mark = ' ',prefix = "$"))+
   scale_x_continuous(labels = scales::comma_format(big.mark = ' '))+
   theme_bw(7)+
@@ -92,40 +96,6 @@ p2 <- ggplot(data_fig,aes(reserve_cum_start,cost,group=1))+
         legend.spacing = unit(0.05,"cm"),
         legend.title = element_text(size=7.5))
 p2
-
-# with cumulative demand
-# p2+geom_vline(data=cum_demand,aes(xintercept=Mton))+
-#   geom_text(data=cum_demand,aes(x=Mton,y=15000,label=name),angle=90,
-#             nudge_x = c(1,1,1,-1,1,-1,-1)*0.5)
-
-# For loop to be able to use a second color scale
-p2a <- p2
-nudges_aux <- c(1.1,1,1,1.2,1.3,1,-1,1,-1)
-adj_y <- c(0,0,0,400,800,0,0,1200,0)
-for (i in length(scens_names):1){
-  data_aux <- cum_demand %>% filter(name==scens_names[i])
-  p2a <- p2a+
-    geom_vline(data=data_aux,aes(xintercept=Mton),col=scen_colors[i],alpha=.5)+
-    geom_text(data=data_aux,aes(x=Mton),y=14000-adj_y[i],
-              label=paste0("(",i,")"),
-              angle=0,size=6*5/14 * 0.8,
-              col=scen_colors[i],nudge_x =nudges_aux[i]*1)
-}
-p2a
-
-# add range instead
-range_demand <- range(cum_demand$Mton)
-p2b <- p2+
-  geom_rect(aes(xmin = range_demand[1], xmax = range_demand[2], ymin = -Inf, ymax = Inf), 
-            fill = "lightgray", alpha = 0.01,col="darkgrey")+
-  geom_vline(data=filter(cum_demand,name==scens_names[[1]]),
-             aes(xintercept=Mton),col=scen_colors[1],alpha=.5)+
-  annotate("text",x=30,y=14000,label="Cumulative Demand \nReference Scenario",hjust=0,size=6*5/14*0.8,
-           col=scen_colors[1])+
-  annotate("text",x=37,y=13000,label="Range of Cumulative \nDemand Scenarios",hjust=0,size=6*5/14*0.8,
-           col="darkgrey")
-
-p2b
 
 # Save with width size of letter
 ggsave("Figures/Article/Fig2b.png", ggplot2::last_plot(),
@@ -226,7 +196,8 @@ data_fig <- df_country %>%
   mutate(Country=if_else(resource_all>3 | Resource_Type=="Volc.-Sed.",
                          Country,paste0("",Region))) %>% 
   group_by(Resource_Type,Country) %>% 
-  reframe(resource_all=sum(resource_all)) %>% ungroup() %>% 
+  reframe(resource_all=sum(resource_all),
+          reserve=sum(reserve),resource_demonstrated=sum(resource_demonstrated),resource_inferred=sum(resource_inferred)) %>% ungroup() %>% 
   group_by(Resource_Type) %>%
   mutate(total_resources=sum(resource_all),
          share_resource=resource_all/sum(resource_all))
@@ -238,7 +209,8 @@ data_fig <- data_fig %>%
   mutate(r_label_small=if_else(resource_all>0.8 & resource_all<2 & 
                                  Resource_Type=="Volc.-Sed.",
                                paste0(Country,": ",format(round(resource_all,1),big.mark=","),"M"),"")) %>% 
-  mutate(r_label=str_replace(r_label,"Africa","Rest of Africa")) %>% 
+  mutate(r_label=str_replace(r_label,"Africa","Rest of Africa") %>% 
+           str_replace("Bolivia: ","Bolivia:   ")) %>% 
   mutate(c_order_lab=paste0(r_label,r_label_small)) %>% 
   ungroup() %>% mutate(share_type=total_resources/sum(resource_all)) %>% 
   mutate(Resource_Type=paste0(Resource_Type,"\n(",round(share_type*100,0),"%)"))
@@ -251,21 +223,52 @@ c_order <- data_fig %>% group_by(c_order_lab) %>% summarise(p=sum(resource_all))
   mutate(p=if_else(c_order_lab=="",0,p)) %>% # no label at end
   arrange(desc(p)) %>% pull(c_order_lab)
 data_fig <- data_fig %>% mutate(c_order_lab=factor(c_order_lab,levels=c_order))
-
 sum(data_fig$resource_all)
 
+# By stage
+data_fig <- data_fig %>% 
+  mutate(share_reserves=reserve/resource_all,
+         share_demResource=resource_demonstrated/resource_all,
+         share_infResource=resource_inferred/resource_all) %>% 
+  # rectangles X limits
+  mutate(x_off=total_resources/2.05,
+         x_start_r1=0-x_off,x_end_r1=share_reserves*total_resources-x_off,
+         x_start_r2=share_reserves*total_resources-x_off,x_end_r2=(share_reserves+share_demResource)*total_resources-x_off,
+         x_start_r3=(share_reserves+share_demResource)*total_resources-x_off,x_end_r3=total_resources-x_off) %>% 
+  # rectangles Y limits
+  arrange(desc(c_order_lab)) %>% 
+  group_by(Resource_Type) %>% 
+  mutate(cum_share_resource=cumsum(share_resource)) %>% 
+  mutate(y_start=cum_share_resource,y_end=lag(cum_share_resource,default = 0)) %>% 
+  ungroup()
+         
+
 p_mosaic <- ggplot(data_fig,aes(x = Resource_Type, y = share_resource, 
-                    width = total_resources,group=c_order_lab,
+                    width = total_resources,
+                    group=c_order_lab,
                     fill = Resource_Type)) +
   geom_bar(stat = "identity", position = "fill",aes(alpha=Resource_Type),colour = "black")+
-  geom_text(data=filter(data_fig,!str_detect(Resource_Type,"Other|Volc")),
+  # RECTANGLES OF STAGES
+  # geom_rect(aes(xmin=x_start_r1,xmax=x_end_r1,ymin=y_start,ymax=y_end),
+  #           color=NA,fill="white",alpha=0)+ # RESERVES is no transparency
+  scale_fill_manual(values=c(unname(resource_colors),"darkgrey"))+
+  geom_rect(aes(xmin=x_start_r2,xmax=x_end_r2,ymin=y_start,ymax=y_end),
+            color="black",fill="white",alpha=0.15,linewidth=0.1)+
+  geom_rect(aes(xmin=x_start_r3,xmax=x_end_r3,ymin=y_start,ymax=y_end),
+            color="black",fill="white",alpha=0.3,linewidth=0.1)+
+  geom_text(x = -37.5, y = 0.98, label = "Reserves",fontface="italic", data = filter(data_fig, str_detect(Country,"Argentina")),size = 7*5/14 * 0.8, hjust = 0, vjust = 1)+
+  geom_text(x = -22.5, y = 0.98, label = "Demonstrated\nResources",fontface="italic", data = filter(data_fig, str_detect(Country,"Argentina")),size = 7*5/14 * 0.8, hjust = 0, vjust = 1)+
+  geom_text(x = 13, y = 0.98, label = "Inferred\nResources",fontface="italic",data = filter(data_fig, str_detect(Country,"Argentina")),size = 7*5/14 * 0.8, hjust = 0, vjust = 1)+
+  # LABELS
+  geom_text(data=filter(data_fig,str_detect(Resource_Type,"Brine")),
             aes(label = r_label), position = position_stack(vjust = 0.5),size=8*5/14 * 0.8) + 
+  geom_text(data=filter(data_fig,str_detect(Resource_Type,"Rock")),
+            aes(label = r_label), position = position_stack(vjust = 0.5),size=7.5*5/14 * 0.8) + 
   # small label
   geom_text(aes(label = r_label_small), position = position_stack(vjust = 0.5),size=5*5/14 * 0.8) + 
   geom_text(data=filter(data_fig,str_detect(Resource_Type,"Other|Volc")),
             aes(label = r_label), position = position_stack(vjust = 0.5),angle=90,size=6*5/14 * 0.8) + 
   facet_grid(~Resource_Type, scales = "free_x", space = "free_x") +
-  scale_fill_manual(values=c(unname(resource_colors),"darkgrey"))+
   scale_alpha_manual(values=c(0.3,0.5,0.5))+
   theme_void(7)+
   labs(title="(A) Lithium Resource Distribution")+
@@ -287,6 +290,10 @@ plot_grid(
 ggsave("Figures/Article/Figure2.png", ggplot2::last_plot(),
        units="cm",dpi=600,
        width=18.4,height=12.4)
+
+pdf("Figures/Article/Figure2.pdf",width=18.4/2.54,height=12.4/2.54)
+ggplot2::last_plot()
+dev.off()
 
 
 # EoF

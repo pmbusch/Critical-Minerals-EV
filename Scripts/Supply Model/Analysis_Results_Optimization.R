@@ -9,7 +9,7 @@ source("Scripts/00-Libraries.R", encoding = "UTF-8")
 # Get list of all folders inside "Results/Optimization"
 (runs <- list.dirs("Results/Optimization/DemandScenario",recursive = F))
 (dict_scen <- tibble(Scenario=scens_selected,scen_name=scens_names))
-source("Scripts/Optimization/LoadOptimizationResults.R", encoding = "UTF-8")
+source("Scripts/Supply Model/02-LoadOptimizationResults.R", encoding = "UTF-8")
 
 
 
@@ -100,11 +100,11 @@ weighted.mean(deposit$grade_resource_inferred,deposit$resource_inferred,na.rm=T)
 
 df_grade <- df_results %>% 
   filter(t<2051) %>%
-  group_by(d) %>% 
+  group_by(Deposit_Name) %>% 
   reframe(total_extraction1=sum(tons_extracted1),
           total_extraction2=sum(tons_extracted2),
           total_extraction3=sum(tons_extracted3)) %>% ungroup() %>% 
-  left_join(deposit,by="d") %>% 
+  left_join(deposit,by="Deposit_Name") %>% 
   mutate(stage1=reserve-total_extraction1,
          stage2=resource_demostrated-total_extraction2,
          stage3=resource_inferred-total_extraction3)
@@ -116,7 +116,7 @@ weighted.mean(df_grade$grade_resource_inferred,df_grade$stage3,na.rm=T)
 
 ## Extraction by deposit -----
 df_results %>% 
-  left_join(deposit,by="d") %>% 
+  left_join(deposit,by="Deposit_Name") %>% 
   group_by(d,Deposit_Name,Country) %>% 
   reframe(total_extraction=sum(total_extraction),
           open=sum(mine_opened)) %>% 
@@ -127,10 +127,10 @@ df_results %>%
 
 data_fig <- df_results %>% 
   filter(t<2051) %>% 
-  group_by(d) %>% 
+  group_by(Deposit_Name) %>% 
   reframe(tons_extracted=sum(tons_extracted)/1e3) %>% ungroup() %>% 
   filter(tons_extracted>0.01) %>% # no extraction
-  left_join(deposit,by="d") %>%
+  left_join(deposit,by="Deposit_Name") %>%
   mutate(edb=100-edb) %>% 
   mutate(cost1=cost1/5.323)
 
@@ -155,7 +155,7 @@ ggplot(data_fig,aes(cost1,edb))+
 ## Production in opened deposits -----------
 data_fig <- df_results %>% 
   # filter(t<2051) %>% 
-  left_join(deposit,by="d") %>% 
+  left_join(deposit,by="Deposit_Name") %>% 
   filter(near(cost_opening,0)) %>%
   mutate(share=total_extraction/(reserve+resource_demostrated+resource_inferred))
 

@@ -12,12 +12,12 @@ df <- do.call(rbind, lapply(runs, function(folder_path)
 
 df <- df %>% 
   mutate(Degradation=loop %>% str_remove("EDBLoop "),
-         Degradation=paste0(Degradation,"0%")) %>% 
+         Degradation=paste0(Degradation,"%")) %>% 
   pivot_wider(names_from = V1, values_from = V2)
 
 ggplot(df,aes(`Objective 1`,`Objective 2`))+
   geom_point()+
-  geom_text(aes(label=Degradation),nudge_x = 1e5,nudge_y = 1e3)+
+  geom_text(aes(label=Degradation),nudge_x = 3e3,nudge_y = 5e2)+
   labs(x="Min Costs",y="Min Ease of Doing Business Index")+
   theme(axis.title.y=element_text(angle=90,margin=margin(r=0)))
 

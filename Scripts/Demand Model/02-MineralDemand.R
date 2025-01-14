@@ -8,6 +8,7 @@
 # LOAD DATA ---------
 ####################
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
+source("Scripts/01-CommonVariables.R", encoding = "UTF-8")
 source("Scripts/Demand Model/01-ParametersDemand.R", encoding = "UTF-8")
 
 ## ICCT on-road demand projections -----
@@ -95,23 +96,24 @@ weighted_avg_index <- function(vec) {
 
 # scen_level <- c("Baseline","Momentum","Ambitious")
 scen_level <- c("Ambitious")
-chems_scen <- c("Baseline","Double LFP","Double NMC 811",
-                "Solid State adoption","Sodium Battery adoption")
+# chems_scen <- c("Baseline","Double LFP","Double NMC 811",
+#                 "Solid State adoption","Sodium Battery adoption")
 chems_scen <- c("Baseline")
-capacity_scen <- c("Baseline","Low Range","High Range")
-lifetime_scen <- c("Baseline","Long duration")
+capacity_scen <- c("Baseline","Low Capacity","High Capacity")
+# lifetime_scen <- c("Baseline","Long duration")
 lifetime_scen <- c("Baseline")
 recycling_scen <- recycling_scenarios$recycling_scenario %>% unique()
-# global rec scenarios
-recycling_scen <- global_rec_scenarios$recycling_scenarios %>% unique()
-mat_recovery_recycling <- global_rec_scenarios
+
+# global rec scenarios - uncomment to run demand loop
+# recycling_scen <- global_rec_scenarios$recycling_scenarios %>% unique()
+# mat_recovery_recycling <- global_rec_scenarios
 
 # results
 df_region_final <- c()
 df_country_final <- c() # slow, only for selected scenarios
 start_time <- proc.time()
 # debug
-# scen=scen_level[1];scen_chem=chems_scen[1];scen_bat=capacity_scen[1];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
+scen=scen_level[1];scen_chem=chems_scen[1];scen_bat=capacity_scen[2];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
 # scen=scen_level[3];scen_chem=chems_scen[1];scen_bat=capacity_scen[1];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
 length(scen_level)*length(chems_scen)*length(capacity_scen)*length(lifetime_scen)*length(recycling_scen)
 for (scen in scen_level){
@@ -127,9 +129,9 @@ for (scen in scen_level){
           
           # all scenarios combined
           scen_all <- paste(scen,scen_chem,scen_bat,scen_life,scen_recyc, sep="-")
-          # if(!(scen_all %in% scens_selected)){ # RUN ONLY DESIRED SCENARIOS
-          #   next
-          # }
+          if(!(scen_all %in% scens_selected)){ # RUN ONLY DESIRED SCENARIOS
+            next
+          }
 
           df <- icct %>% 
             filter(Powertrain!="ICE") %>% 
@@ -139,6 +141,20 @@ for (scen in scen_level){
           mat_recovery_recyc_aux <- mat_recovery_recycling %>% 
             filter(recycling_scenarios==scen_recyc)
           mat_recovery_recyc_aux$recycling_scenarios <- NULL  
+          
+          # Special USA case
+          if(scen_recyc=="USA Recycling"){
+            mat_recovery_recyc_aux <- mat_recovery_recycling_USA
+            mat_recovery_recyc_aux$recycling_scenarios <- NULL  
+          }
+          
+          # 55 recycling level
+          if(scen_recyc=="Recycling Medium"){
+            mat_recovery_recyc_aux <- global_rec_scenarios %>% 
+              filter(recycling_scenarios=="Recycling percentage 55")
+            mat_recovery_recyc_aux$recycling_scenarios <- NULL  
+          }
+          
           
           ## Add Battery size and chemistry ----------
           
@@ -150,12 +166,16 @@ for (scen in scen_level){
             filter(capacity_scenario==scen_bat) %>% 
             mutate(chem_scenario=NULL,capacity_scenario=NULL)
           
+          bat_rest_loop <- bat_rest %>% 
+            filter(capacity_scenario==scen_bat) %>% 
+            mutate(capacity_scenario=NULL)
+            
           # LDV
           df_ldv <- df %>% filter(Vehicle=="Car") %>% 
             left_join(bat_ldv_loop)
           # REST
           df_rest <- df %>% filter(Vehicle!="Car") %>% 
-            left_join(bat_rest)
+            left_join(bat_rest_loop)
           
           # Join them
           df <- rbind(df_ldv,df_rest); rm(df_ldv,df_rest);
@@ -475,13 +495,13 @@ for (scen in scen_level){
         rm(df_region)
         
         # Save results at Coutry level - SLOW!
-        # df_country <- df %>% 
-        #   group_by(Year,Region,Country,Powertrain,Vehicle,chemistry,Mineral) %>% 
+        # df_country <- df %>%
+        #   group_by(Year,Region,Country,Powertrain,Vehicle,chemistry,Mineral) %>%
         #   reframe(tons_mineral=sum(tons_mineral)) %>% ungroup()
-        # nrow(df_country) # 
+        # nrow(df_country) #
         # # add scenarios
         # df_country$Scenario <- scen
-        # df_country$chem_scenario <- scen_chem  
+        # df_country$chem_scenario <- scen_chem
         # df_country$capacity_scenario <- scen_bat
         # df_country$lifetime_scenario <- scen_life
         # df_country$recycling_scenario <- scen_recyc
@@ -489,7 +509,7 @@ for (scen in scen_level){
         # df_country <- df_country %>% filter(abs(tons_mineral)>0)
         # df_country_final <- rbind(df_country_final,df_country)
         # rm(df_country)
-        
+
         }
       }
     }
@@ -514,13 +534,12 @@ df_scen <- df_region_final %>%
                         lifetime_scenario,recycling_scenario,sep="-"))
   # filter(scen_all %in% scens_selected)
 df_scen$scen_all %>% unique()
-# write.csv(df_scen,"Results/MineralDemand_FewScenarios.csv",row.names = F)
+write.csv(df_scen,"Results/MineralDemand_FewScenarios.csv",row.names = F)
 # recycling loop
-write.csv(df_scen,"Results/MineralDemand_RecyclingLoop.csv",row.names = F)
-
+# write.csv(df_scen,"Results/MineralDemand_RecyclingLoop.csv",row.names = F)
 
 # all scenarios
-write.csv(df_region_final,"Results/MineralDemandRegion.csv",row.names = F)
+# write.csv(df_region_final,"Results/MineralDemandRegion.csv",row.names = F)
 
 df_country_final <- df_country_final %>% 
   mutate(scen_all=paste(Scenario,chem_scenario,capacity_scenario,

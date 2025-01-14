@@ -3,25 +3,20 @@
 
 # Load data -------
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
+source("Scripts/01-CommonVariables.R", encoding = "UTF-8")
 
 
 # Get list of all folders inside "Results/Optimization"
 (runs <- list.dirs("Results/Optimization/DemandScenario",recursive = F))
 (dict_scen <- tibble(Scenario=scens_selected,name=scens_names))
-source("Scripts/Supply Model/02-LoadOptimizationResults.R", encoding = "UTF-8")
-
-
-# Data to recreate figure is same as Table1 
-# (if decide not to run optimization code, then can preload results, along with the first lines of 
-# the script 02-LoadOptimizationResults.R (load other data required)
-df_results <- read.csv("Results/Data_Table1.csv")
+source("Scripts/Supply Model/01-LoadOptimizationResults.R", encoding = "UTF-8")
 
 
 # get difference of opened deposits ------
 
 df <- df_results %>%
   filter(t<2051) %>% 
-  filter(str_detect(name,"Ref|High|Recyc")) %>% 
+  filter(str_detect(name,"Ref|Large|Enhanced Recyc")) %>% 
   left_join(dplyr::select(deposit,Deposit_Name,Status)) %>% 
   filter(near(mine_opened,1)) %>% 
   # group_by(name) %>% tally()
@@ -38,16 +33,16 @@ df <- df %>%
   mutate(symbol=case_when(
     Status=="Producing" ~ "Producing",
     Status=="Construction" ~ "Construction",
-    is.na(Ref) ~ "Needed due to higher capacity LIBs - Scen. (2)",
+    is.na(Ref) ~ "Needed due to large capacity LIBs - Scen. (2)",
     is.na(Rec) ~ "Avoided by Recycling - Scen. (9)",
     T ~ "Reference Scenario (1)") %>% 
       factor(levels=c("Producing","Construction","Reference Scenario (1)",
                       "Avoided by Recycling - Scen. (9)",
-                      "Needed due to higher capacity LIBs - Scen. (2)")))
+                      "Needed due to large capacity LIBs - Scen. (2)")))
 table(df$symbol)
 
 total_extraction <- df_results %>%  filter(t<2051) %>% 
-  filter(str_detect(name,"Ref|High|Recyc")) %>% 
+  filter(str_detect(name,"Ref|Large|Enhanced Recyc")) %>% 
   group_by(Deposit_Name,name) %>% 
   reframe(mtons_extraction=sum(tons_extracted)/1e3) %>% ungroup() %>% 
   left_join(dplyr::select(df,Deposit_Name,symbol)) %>% 
@@ -75,6 +70,9 @@ df %>% group_by(symbol) %>% tally()
 
 # export for QGIS map preparation
 write.csv(df,"Results/MapOpenDeposits.csv",row.names = F)
+
+## ACTUAL FIGURE IS MADE IN QGIS, simply loading this csv and adding a world basemap behing
+# with appropiate labels, legends and so on.
 
 map1 <- map_data('world')
 p1 <- ggplot(df) +

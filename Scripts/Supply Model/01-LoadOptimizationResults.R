@@ -9,7 +9,7 @@ recycling <- read.csv("Parameters/Recycling.csv")
 deposit <- read.csv("Parameters/Deposit.csv")
 
 (d_size <- nrow(deposit))
-(t_size <- nrow(demand))
+(t_size <- nrow(filter(demand,str_detect(Scenario,"Enhanced rec"))))
 
 prod_rate <- expand.grid(Deposit_Name=unique(deposit$Deposit_Name),
                          t=unique(demand$t)) %>% 
@@ -24,10 +24,10 @@ prod_rate <- expand.grid(Deposit_Name=unique(deposit$Deposit_Name),
     T ~ prod_rate2030)) %>% 
   dplyr::select(Deposit_Name,t,prod_rate)
 
-# bigM_cost <- 1e6 # same as Julia
-bigM_cost <- 100000*5.323 # historic high was 68K for LCE
-discount_rate <- 0.07 # same as Julia
-# discount_rate <- 0.03
+
+opt_param <- read.csv(file.path(runs[1], "OptimizationInputs.csv"))
+(bigM_cost <- opt_param[2,2])
+(discount_rate <- opt_param[1,2] )
 
 # Load Results --------
 
@@ -70,10 +70,10 @@ open_deposits <- df_results %>% group_by(Deposit_Name,Scenario) %>%
   pull(d) %>% unique()
 
 # dict of scenarios - specified beforehand
-df_results <- df_results %>% left_join(dict_scen)
-slack <- slack %>% left_join(dict_scen)
-demand <- demand %>% left_join(dict_scen)
-recycling <- recycling %>% left_join(dict_scen)
+df_results <- df_results %>% left_join(dict_scen) %>% mutate(name=factor(name,levels=scens_names))
+slack <- slack %>% left_join(dict_scen) %>% mutate(name=factor(name,levels=scens_names))
+demand <- demand %>% left_join(dict_scen) %>% mutate(name=factor(name,levels=scens_names))
+recycling <- recycling %>% left_join(dict_scen) %>% mutate(name=factor(name,levels=scens_names))
 
 
 # EoF

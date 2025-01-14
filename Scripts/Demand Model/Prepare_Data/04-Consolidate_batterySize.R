@@ -7,6 +7,8 @@ url_save <- "Parameters/Demand Intermediate Results/%s.csv"
 
 # LOAD DATA ---------
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
+source("Scripts/01-CommonVariables.R", encoding = "UTF-8")
+
 
 # dictionary or equivalency for ICCT
 eq_country_region <- read_excel("Data/Joins/Eq_Countries_ICCT_EVV.xlsx",
@@ -21,19 +23,23 @@ bat_region <- bat_region %>% filter(Year==2022)
 bat_ldv$Vehicle <- "Car";bat_region$Vehicle <- "Car";
 
 # Battery for other on-road transport 
-bat_others <- read_excel("Data/Demand Model/Battery_Size.xlsx",sheet = "Battery_Size")
-
+bat_others_orig <- read_excel("Data/Demand Model/Battery_Size.xlsx",sheet = "Battery_Size")
+bat_others_orig <- bat_others_orig %>% 
+  pivot_longer(c(kwh_veh,low_capacity,high_capacity), 
+               names_to = "scen", values_to = "kwh_veh")
+  
 # share of 2-3 wheelers
 share_2_3_wheelers <- read_excel("Data/Demand Model/Disaggregated 2-3 wheeler sales.xlsx",
                                  sheet="2_3_WheelerShare",range = "A27:D31")
 
-bat_wheelers <- bat_others %>% filter(str_detect(Vehicle,"wheeler"))
-bat_others <- bat_others %>% filter(!str_detect(Vehicle,"wheeler"))
+bat_wheelers <- bat_others_orig %>% filter(str_detect(Vehicle,"wheeler"))
+bat_others <- bat_others_orig %>% filter(!str_detect(Vehicle,"wheeler"))
 
 bat_wheelers <- share_2_3_wheelers %>% 
   dplyr::select(Country,Share_2Wheeler) %>% mutate(Year=2022) %>% 
   left_join(bat_wheelers)
-bat_wheelers <- bat_wheelers %>% pivot_wider(names_from = Vehicle, values_from = kwh_veh) %>% 
+bat_wheelers <- bat_wheelers %>%
+  pivot_wider(names_from = Vehicle, values_from = kwh_veh) %>% 
   mutate(kwh_veh=`2 wheeler`*Share_2Wheeler+`3 wheeler`*(1-Share_2Wheeler))
 bat_wheelers$Share_2Wheeler <- bat_wheelers$`2 wheeler` <- bat_wheelers$`3 wheeler` <- NULL
 
@@ -71,8 +77,16 @@ length(unique(bat_ldv$Country))*length(unique(bat_ldv$Powertrain)) # 187 * 2 = 3
 bat_ldv$MWh <- bat_ldv$unit <- NULL  
 bat_ldv <- bat_ldv %>% rename(kwh_veh=kwh_veh_total)
 
+# ratio PHEV to BEV - aprox 20%
+bat_ldv %>% group_by(Powertrain,Region,Vehicle) %>% 
+  reframe(kwh_veh=mean(kwh_veh)) %>% 
+  pivot_wider(names_from = Powertrain, values_from = kwh_veh) %>% 
+  mutate(ratio_phev_bev=PHEV/BEV)
+
 # other vehicles - All BEVs
+bat_others_scen <- bat_others
 bat_others$Year <- NULL # for all years use the same battery
+bat_others <- bat_others %>% filter(scen=="kwh_veh") %>% mutate(scen=NULL)
 
 # simply use world average for all other vehicles
 bat_rest <- c()
@@ -96,73 +110,54 @@ nrow(bat_rest) # 187 * 5 = 935
 # merge both no chem
 bat_rest_aux <- mutate(bat_rest,chemistry=NULL)
 bat_rest_aux <- rbind(mutate(bat_rest_aux,Powertrain="BEV"),
-                      mutate(bat_rest_aux,Powertrain="PHEV"))
+                      # 20% of battery size assumed for PHEV
+                      mutate(bat_rest_aux,Powertrain="PHEV",kwh_veh=kwh_veh*0.2))
+
 bat <- rbind(bat_ldv,bat_rest_aux)
+
 
 # Save results
 write.csv(bat,sprintf(url_save,"bat_size"),row.names = F)
 
 # Bat Size Over time ------------
 
-# Get ranges for each country - need to play with dictionary
-# Range data by country
-range_country <- read.csv(sprintf(url_save,"Data_LinearModel")) %>% filter(year==2022)
-# not the same battery numbers, weird
-# eq country - dictionary
-eqs <- read_excel("Data/Joins/Eq_Countries_ICCT_EVV.xlsx",sheet = "Eq_Country2", range = "A1:B117")
-range_country <- range_country %>% rename(EVV_Country=Sales_Country) %>% left_join(eqs) %>% 
-  rename(Country=ICCT_Country) %>% left_join(eq_country_region) %>% filter(!is.na(Region))
-range_country <- range_country %>% filter(Propulsion=="BEV") %>% 
-  dplyr::select(Region,Country,range,unit)
-range_region <- range_country %>% group_by(Region) %>% 
-  reframe(range=weighted.mean(range,unit),
-          unit=sum(unit)) %>% ungroup()
-
-bat_range <- bat %>% filter(Powertrain=="BEV",Vehicle=="Car") %>% 
-  mutate(kwh_veh=NULL) %>% left_join(range_country)
-bat_range_na <- bat_range %>% filter(is.na(range)) %>% # Jojn by region
-  mutate(range=NULL,unit=NULL) %>% left_join(range_region)
-bat_range <- bat_range %>% filter(!is.na(range)) %>% rbind(bat_range_na)
-
+# Scenarios to 45 and 90 kwh for cars
 # Scenarios for all
 years <- tibble(Year=2022:2070,dummy=1)
-batSize_scen <- tibble(dummy=1,capacity_scenario=c("Baseline","Low Range","High Range"))
+batSize_scen <- tibble(dummy=1,capacity_scenario=c("Baseline","Low Capacity","High Capacity"))
 # scenario constant
 bat_2050 <- bat_ldv %>% mutate(dummy=1) %>% 
   left_join(years) %>% 
-  left_join(batSize_scen)
+  left_join(batSize_scen) %>% 
+  mutate(dummy=NULL)
 
-# Do Scenarios for BEV and Cars based on range
-goal_year <- 2035 # year that range is achieved
-range_goals <- tibble(dummy=1,capacity_scenario=c("Low Range","High Range"),
-                      range_goal=c(300,600))
+# Do Scenarios for BEV  based on desired kWh
+goal_year <- 2035 # year that range/cap is achieved
+cap_goals <- tibble(dummy=1,
+                      capacity_scenario=c("Low Capacity","High Capacity"),
+                      cap_goal=c(45,90))
+                      
 # slope
-slope_bat <- bat_range %>% mutate(dummy=1) %>% left_join(range_goals) %>% 
-  mutate(slope=(range_goal-range)/(goal_year-2022)) %>% 
-  dplyr::select(Country,capacity_scenario,slope,range_goal)
+slope_bat <- bat_ldv %>% mutate(dummy=1) %>% 
+  left_join(cap_goals) %>% 
+  mutate(slope=(cap_goal-kwh_veh)/(goal_year-2022)) %>% 
+  dplyr::select(Country,Powertrain,capacity_scenario,slope,cap_goal)
 
-# Do range scenarios - linearly until 2035
-bat_range <- bat_range %>% mutate(dummy=1) %>% 
-  left_join(years,relationship = "many-to-many") %>% 
-  left_join(slope_bat,relationship = "many-to-many") %>% 
-  rename(range_2022=range) %>% 
-  mutate(range=if_else(Year>2035,range_goal,range_2022+(Year-2022)*slope)) %>% 
-  dplyr::select(-slope,-range_2022,-range_goal,-dummy)
-
-# Load Battery Capacity ~ Range model Coefficients
-# See Script BatterySize_Regression for details
-(mod <- read.csv(sprintf(url_save,"BatSizeLinearModel")))
-intercept <- mod %>% filter(Propulsion=="BEV") %>% pull(Intercept)
-range_slope <-  mod %>% filter(Propulsion=="BEV") %>% pull(Range_Slope)
-
-# forecast of battery size based on range
-bat_2050_car <- bat_range %>% 
-  mutate(kwh_veh=intercept+range_slope*range)
+# linearly until 2035
+bat_2050 <- bat_2050 %>% 
+  left_join(slope_bat) %>% 
+  rename(kwh_veh_2022=kwh_veh) %>% 
+  mutate(kwh_veh=if_else(Year>goal_year,
+                       cap_goal,
+                       kwh_veh_2022+(Year-2022)*slope)) %>%
+  mutate(kwh_veh=if_else(is.na(kwh_veh)|Powertrain=="PHEV",kwh_veh_2022,kwh_veh)) %>% 
+  dplyr::select(-slope,-kwh_veh_2022,-cap_goal)
 
 # Figure at region level
-bat_2050_car %>% 
+bat_2050 %>% 
+  filter(Powertrain=="BEV") %>% 
   group_by(Region,Year,capacity_scenario) %>% 
-  reframe(kwh_veh=weighted.mean(kwh_veh,unit)) %>% ungroup() %>% # note that unit are valid for 2022
+  reframe(kwh_veh=mean(kwh_veh)) %>% ungroup() %>% # note that unit are valid for 2022
   filter(Year<2036) %>% 
   ggplot(aes(Year,kwh_veh,col=Region))+
   geom_line()+
@@ -177,18 +172,39 @@ bat_2050_car %>%
   scale_y_continuous(breaks=c(20,40,60,80),limits = c(0,95))
 f.fig.save("Figures/batSize_scenarios.png")
 
-# join and save
-names(bat_2050);names(bat_2050_car);
-bat_2050$dummy <- NULL
-bat_2050_car$unit <- bat_2050_car$range <- NULL
+## For other vehicles ------
 
-# remove car-bev
-bat_2050 <- bat_2050 %>% filter(Powertrain!="BEV" | capacity_scenario=="Baseline")
-bat_2050 %>% group_by(Vehicle,Powertrain,capacity_scenario ) %>% tally() %>% 
-  spread(capacity_scenario,n)
-bat_2050 <- rbind(bat_2050,bat_2050_car)
+# add time and expand linearly to 2035, based on goals
+bat_2050_others <- bat_rest_aux %>% mutate(dummy=1) %>% 
+  left_join(years) %>% 
+  left_join(batSize_scen) %>% 
+  mutate(dummy=NULL)
 
-write.csv(bat_2050,sprintf(url_save,"bat_size_forecast"),row.names = F)
+# join based on average original kWh value (to avoid left join to countries again)
+aux_join <- bat_others_scen %>% 
+  dplyr::select(-Year,-chemistry) %>% 
+  pivot_wider(names_from = scen, values_from = kwh_veh) %>% 
+  dplyr::select(-Country,-Vehicle) %>% 
+  mutate(Baseline=kwh_veh) %>% 
+  pivot_longer(c(-kwh_veh), names_to = "capacity_scenario", values_to = "goal") %>% 
+  mutate(capacity_scenario=str_replace(capacity_scenario,"_"," ") %>% 
+           str_to_title())
+
+# Linear to 2035
+aux_join <- aux_join %>% mutate(dummy=1) %>% 
+  left_join(years,relationship = "many-to-many") %>% 
+  mutate(slope=(goal-kwh_veh)/(goal_year-2022)) %>% 
+  mutate(new_kwh_veh=if_else(Year>2035,goal,kwh_veh+(Year-2022)*slope)) %>% 
+  dplyr::select(-goal,-slope,-dummy) 
+  
+bat_2050_others <- bat_2050_others %>% 
+  left_join(aux_join) %>% 
+  mutate(kwh_veh=if_else(is.na(new_kwh_veh),kwh_veh,new_kwh_veh),
+         new_kwh_veh=NULL)
+
+bat_2050_all <- rbind(bat_2050,bat_2050_others)
+
+write.csv(bat_2050_all,sprintf(url_save,"bat_size_forecast"),row.names = F)
 
 # Chemistry ------------
 
@@ -217,9 +233,15 @@ bat_ldv <- bat_2050 %>%
   mutate(kwh_veh=kwh_veh*share_units,
          share_units=NULL)
 
-# Save ldv and rest separetely
+# add chem to others
+chem_rest <- bat_rest %>% group_by(Vehicle,chemistry) %>% 
+  tally() %>% mutate(n=NULL)
+bat_rest2 <- bat_2050_others %>% 
+  left_join(chem_rest)
+
+# Save ldv and rest separately
 write.csv(bat_ldv,sprintf(url_save,"bat_size_chem_ldv"),row.names = F)
-write.csv(bat_rest,sprintf(url_save,"bat_size_chem_rest"),row.names = F)
+write.csv(bat_rest2,sprintf(url_save,"bat_size_chem_rest"),row.names = F)
 
 
 # EoF

@@ -4,6 +4,7 @@
 
 # LOAD DATA ---------
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
+source("Scripts/01-CommonVariables.R", encoding = "UTF-8")
 
 # old
 # url_file <- "H:/.shortcut-targets-by-id/1plIa0mi3uOlZiLGrxKO0lx_iQ4Nc08gZ/HSF Critical Minerals/Data/Mine Characterization/%s"
@@ -13,7 +14,7 @@ url_file <- "H:/.shortcut-targets-by-id/1plIa0mi3uOlZiLGrxKO0lx_iQ4Nc08gZ/HSF Cr
 # url_file <- "Data/%s"
 
 # Collected Lithium data
-df <- read_excel(sprintf(url_file,"Table S6.xlsx"),
+df <- read_excel(sprintf(url_file,"Nature Sust Submission/Data S2.xlsx"),
                  sheet="Deposits",range="A5:BN165")
 (colnames(df) <- colnames(df) %>% str_replace_all(" ","_") %>% 
     str_replace("%","perc") %>% str_replace("/","_per"))

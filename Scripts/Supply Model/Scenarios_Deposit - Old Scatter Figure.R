@@ -9,6 +9,8 @@ source("Scripts/00-Libraries.R", encoding = "UTF-8")
 theme_set(theme_bw(8)+ theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.title.y=element_text(angle=0,margin=margin(r=0))))
 
 
+# just result for 2022-2050
+limit_year <- 2051
 
 # note that some deposits parameters are different for each run - so do not use them sparingly
 # Input Parameters
@@ -17,7 +19,7 @@ recycling <- read.csv("Parameters/Recycling.csv")
 deposit <- read.csv("Parameters/Deposit.csv")
 
 (d_size <- nrow(deposit))
-(t_size <- nrow(demand))
+(t_size <- nrow(filter(demand,str_detect(Scenario,"recycling"))))
 
 prod_rate <- expand.grid(Deposit_Name=unique(deposit$Deposit_Name),
                          t=unique(demand$t)) %>% 
@@ -32,9 +34,6 @@ prod_rate <- expand.grid(Deposit_Name=unique(deposit$Deposit_Name),
     T ~ prod_rate2030)) %>% 
   dplyr::select(Deposit_Name,t,prod_rate)
 
-# bigM_cost <- 1e6 # same as Julia
-bigM_cost <- 100000*5.323 # historic high was 68K for LCE
-discount_rate <- 0.07 
 
 # Get list of all folders inside "Results/Optimization"
 (runs <- list.dirs("Results/Optimization/Scenarios_Deposit",recursive = T))
@@ -43,6 +42,11 @@ ref <- list.dirs("Results/Optimization/DemandScenario",recursive = F)
 runs <- c(ref,runs)
 
 (dict_scen <- tibble(Scenario=scens_selected,name=scens_names))
+
+opt_param <- read.csv(file.path(runs[1], "OptimizationInputs.csv"))
+(bigM_cost <- opt_param[2,2])
+(discount_rate <- opt_param[1,2] )
+
 
 ## Deposits Scenarios -------------
 
@@ -70,7 +74,9 @@ slack <- slack %>%
          count_aux=str_count(path,"/"),
          path=paste0(path,if_else(count_aux==1,"/Base",""))) %>% 
   separate(path, into = c("Aux","Scenario","Scen_Deposit"), sep = "/") %>% 
-  mutate(count_aux=NULL,Aux=NULL)
+  mutate(count_aux=NULL,Aux=NULL) %>% 
+  left_join(tibble(Scenario=scens_selected,name=scens_names))
+
 
 # add scen name
 df_results <- df_results %>% 
@@ -81,12 +87,14 @@ unique(df_results$Scen_Deposit)
 dep_scen <- c("Base","noDLE_prodRate","AllDLE_prodRate",
               "2_prodRate","5_prodRate",
               "NoRampUp","2yRampUp","8yRampUp",
-              "No Clay","NoInferredResources")
+              "No Clay","NoInferredResources",
+              "shorter_LeadTime","longer_LeadTime")
 dep_scen_name <- c("Reference",
                    "No DLE Brine","All Brine DLE",
                    "2% Max prod. rate","5% Max prod. rate",
                    "1-year ramp up","2-year ramp-up","8-year ramp-up",
-                   "No clay resources","No inferred resources")
+                   "No clay resources","No inferred resources",
+                   "Shorter Lead Time","Longer Lead Time")
 df_results <- df_results %>% 
   left_join(tibble(Scen_Deposit=dep_scen,
                    dep_scen=dep_scen_name)) %>% 
@@ -108,7 +116,7 @@ df_results <- df_results %>%
          total_extraction2=cumsum(tons_extracted2),
          total_extraction3=cumsum(tons_extracted3)) %>% ungroup()
 
-df_results %>% filter(t<2051) %>% 
+df_results %>% filter(t<limit_year) %>% 
   left_join(dplyr::select(deposit,Deposit_Name,Resource_Type)) %>% 
   group_by(name,dep_scen,Resource_Type) %>% 
   reframe(tons_extracted=sum(tons_extracted)/1e3) %>% #million 
@@ -116,60 +124,19 @@ df_results %>% filter(t<2051) %>%
 
 # Slack
 slack %>% 
-  filter(t<2051) %>% 
+  filter(t<limit_year) %>% 
   group_by(Scenario,Scen_Deposit) %>% reframe(x=sum(value)/1e3) %>% arrange(desc(x))
 
-
-# Deposit Scenarios -------------
+# Figure -------------
 
 ## Mines opened ---------
 data_fig <- df_results %>%
-  filter(t<2051) %>%
+  filter(t<limit_year) %>%
   group_by(name,dep_scen) %>% 
-  reframe(mines_open=sum(new_mine_open)) %>% 
-  ungroup %>% group_by(dep_scen) %>%
-  # find duplicate values in same row of table
-  mutate(overlap_x = ifelse(duplicated(mines_open) | duplicated(mines_open, fromLast = TRUE), 
-                            1, 0)) %>% ungroup() %>% 
-  # do the overlap
-  group_by(dep_scen,mines_open) %>%
-  mutate(sum_X = sum(overlap_x),
-         pos_X = ifelse(overlap_x == 1, seq_along(overlap_x) / (sum_X + 1) - 0.5, 0)) %>% ungroup()
+  reframe(mines_open=sum(new_mine_open)) %>% ungroup() 
 
 y_title="Number of new opened Deposits"
 
-# # uncomment for SLACK
-# slack_value <- slack %>%
-#   filter(t<2051) %>%
-#   left_join(tibble(Scen_Deposit=dep_scen,dep_scen=dep_scen_name)) %>%
-#   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>%
-#   group_by(name,dep_scen) %>%
-#   reframe(slack=sum(value))
-# data_fig <- data_fig %>%
-#   left_join(slack_value) %>%
-#   mutate(dep_scen=factor(dep_scen,levels=rev(dep_scen_name))) %>%
-#   mutate(mines_open=slack,pos_X=0)
-# y_title="Lithium demand not met [ktons]"
-
-
-# uncomment for total cost
-# # Remove effect of discount rate
-# discounter <- tibble(t=2022:(t_size+2021),r=(1+discount_rate)^(0:(t_size-1)))
-# cost <- df_results %>%
-#   filter(t<2051) %>%
-#   left_join(deposit) %>%
-#   mutate(total_cost=cost1*tons_extracted1+cost2*tons_extracted2+cost3*tons_extracted3+
-#            capacity_added*cost_expansion+mine_opened*cost_opening) %>%
-#   left_join(discounter) %>%
-#   mutate(total_cost=total_cost/r) %>%
-#   left_join(tibble(Scen_Deposit=dep_scen,dep_scen=dep_scen_name)) %>%
-#   group_by(name,dep_scen) %>%
-#   reframe(total_cost=sum(total_cost)/1e9)
-# data_fig <- data_fig %>%
-#   left_join(cost) %>%
-#   mutate(dep_scen=factor(dep_scen,levels=rev(dep_scen_name))) %>%
-#   mutate(mines_open=total_cost,pos_X=0)
-# y_title="Total Cost [trillion USD in 2022]"
 
 # reference values
 ref_values <- data_fig %>% filter(dep_scen=="Reference") %>% pull(mines_open)
@@ -193,7 +160,7 @@ p1 <- ggplot(data_fig,aes(dep_scen,mines_open))+
   geom_vline(xintercept = c(0.5,2.5,5.5,7.5,9.5),
              col="grey",linewidth=0.15)+
   coord_flip()+
-  scale_y_continuous(breaks = c(0,25,50,75),limits = c(0,97))+
+  # scale_y_continuous(breaks = c(0,25,50,75),limits = c(0,97))+
   labs(x="",col="Demand\nScenario",
        y=y_title,
        title="(A) Deposit Parameters Sensitivity")+
@@ -215,11 +182,72 @@ data_fig %>%
   mutate(name=substr(name,0,3)) %>% 
   ggplot(aes(name,dep_scen))+
   geom_tile(aes(fill=mines_open),col="black",linewidth=0.1)+
+  geom_text(aes(label=mines_open))+
   coord_cartesian(expand=F)+
   labs(x="Demand Scenario",y="",fill="Number of \nnew opened \nDeposits")+
   scale_fill_gradient(low = "white", high = "purple") +  # Change "purple" to "red" if preferred
   theme_minimal()
   
+
+
+
+
+
+# # uncomment for SLACK
+# slack_value <- slack %>%
+#   filter(t<2051) %>%
+#   left_join(tibble(Scen_Deposit=dep_scen,dep_scen=dep_scen_name)) %>%
+#   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>%
+#   group_by(name,dep_scen) %>%
+#   reframe(slack=sum(value))
+# data_fig <- data_fig %>%
+#   left_join(slack_value) %>%
+#   mutate(dep_scen=factor(dep_scen,levels=rev(dep_scen_name))) %>%
+#   mutate(mines_open=slack,pos_X=0)
+# y_title="Lithium demand not met [ktons]"
+
+
+# uncomment for total cost
+# # Remove effect of discount rate
+# discounter <- tibble(t=2022:(t_size+2021),r=(1+discount_rate)^(0:(t_size-1)))
+# cost <- df_results %>%
+#   filter(t<limit_year) %>%
+#   left_join(deposit) %>%
+#   # all costs are converted to million usd, same as julia
+#   mutate(total_cost=cost1*tons_extracted1/1e3+
+#            cost2*tons_extracted2/1e3+
+#            cost3*tons_extracted3/1e3+
+#            capacity_added*cost_expansion/1e3+
+#            mine_opened*cost_opening/1e6) %>%
+#   left_join(discounter) %>%
+#   mutate(total_cost=total_cost/r) %>%
+#   left_join(tibble(Scen_Deposit=dep_scen,dep_scen=dep_scen_name)) %>%
+#   group_by(name,dep_scen) %>%
+#   reframe(total_cost=sum(total_cost)/1e3) # to billion
+# slack_cost <- slack %>%
+#   filter(t<limit_year) %>%
+#   left_join(discounter) %>%
+#   mutate(cost=value*bigM_cost/r) %>%
+#   left_join(tibble(Scen_Deposit=dep_scen,dep_scen=dep_scen_name)) %>%
+#   group_by(name,dep_scen) %>%
+#   reframe(slack=sum(cost)/1e3)
+# data_fig <- data_fig %>%
+#   left_join(cost) %>%
+#   left_join(slack_cost) %>%
+#   mutate(total_cost=total_cost+slack) %>%
+#   mutate(dep_scen=factor(dep_scen,levels=rev(dep_scen_name))) %>%
+#   mutate(mines_open=total_cost,pos_X=0)
+# y_title="Total Cost [billion USD in 2022]"
+
+
+
+
+
+
+
+
+
+
 
 # ## Reserve depletion ------
 # df_results %>%
@@ -271,7 +299,9 @@ slack2 <- slack2 %>%
          count_aux=str_count(path,"/"),
          path=paste0(path,if_else(count_aux==1,"/Base",""))) %>% 
   separate(path, into = c("Aux","Scenario","Scen_Deposit"), sep = "/") %>% 
-  mutate(count_aux=NULL,Aux=NULL)
+  mutate(count_aux=NULL,Aux=NULL) %>% 
+  left_join(tibble(Scenario=scens_selected,name=scens_names))
+
 
 # add scen name
 df_results2 <- df_results2 %>% 
@@ -304,7 +334,7 @@ df_results2 <- df_results2 %>%
          total_extraction2=cumsum(tons_extracted2),
          total_extraction3=cumsum(tons_extracted3)) %>% ungroup()
 
-df_results2 %>% filter(t<2051) %>% 
+df_results2 %>% filter(t<limit_year) %>% 
   left_join(dplyr::select(deposit,Deposit_Name,Resource_Type)) %>% 
   group_by(name,Scen_Deposit,Resource_Type) %>% 
   reframe(tons_extracted=sum(tons_extracted)/1e3) %>% #million 
@@ -312,7 +342,7 @@ df_results2 %>% filter(t<2051) %>%
 
 # Slack
 slack2 %>% 
-  filter(t<2051) %>% 
+  filter(t<limit_year) %>% 
   group_by(Scenario,Scen_Deposit) %>% reframe(x=sum(value)/1e3) %>% arrange(desc(x))
 
 
@@ -320,7 +350,7 @@ slack2 %>%
 
 ## Mines opened ---------
 data_fig2 <- df_results2 %>%
-  filter(t<2051) %>%
+  filter(t<limit_year) %>%
   group_by(name,Scen_Deposit) %>% 
   reframe(mines_open=sum(new_mine_open)) %>% 
   ungroup %>% group_by(Scen_Deposit) %>%
@@ -351,20 +381,32 @@ y_title="Number of new opened Deposits"
 # Remove effect of discount rate
 # discounter <- tibble(t=2022:(t_size+2021),r=(1+discount_rate)^(0:(t_size-1)))
 # cost2 <- df_results2 %>%
-#   filter(t<2051) %>%
+#   filter(t<limit_year) %>%
 #   left_join(deposit) %>%
-#   mutate(total_cost=cost1*tons_extracted1+cost2*tons_extracted2+cost3*tons_extracted3+
-#            capacity_added*cost_expansion+mine_opened*cost_opening) %>%
+#   # all costs are converted to million usd, same as julia
+#   mutate(total_cost=cost1*tons_extracted1/1e3+
+#            cost2*tons_extracted2/1e3+
+#            cost3*tons_extracted3/1e3+
+#            capacity_added*cost_expansion/1e3+
+#            mine_opened*cost_opening/1e6) %>%
 #   left_join(discounter) %>%
 #   mutate(total_cost=total_cost/r) %>%
 #   mutate(Scen_Deposit=Scen_Deposit %>%  str_replace("Base","Reference")) %>%
 #   group_by(name,Scen_Deposit) %>%
-#   reframe(total_cost=sum(total_cost)/1e9)
+#   reframe(total_cost=sum(total_cost)/1e3) # to billion
+# slack_cost2 <- slack2 %>% 
+#   filter(t<limit_year) %>% 
+#   left_join(discounter) %>% 
+#   mutate(cost=value*bigM_cost/r) %>% 
+#   mutate(Scen_Deposit=Scen_Deposit %>%  str_replace("Base","Reference")) %>%
+#   group_by(name,Scen_Deposit) %>% 
+#   reframe(slack=sum(cost)/1e3)
 # data_fig2 <- data_fig2 %>%
 #   left_join(cost2) %>%
+#   left_join(slack_cost2) %>%
+#   mutate(total_cost=total_cost+slack) %>%
 #   mutate(mines_open=total_cost,pos_X=0)
-# y_title="Total Cost [trillion USD in 2022]"
-
+# y_title="Total Cost [billion USD in 2022]"
 
 data_fig2 <- data_fig2 %>% mutate(Scen_Deposit=factor(Scen_Deposit,levels=rev(count_order)))
 
@@ -385,7 +427,7 @@ p2 <- ggplot(data_fig2,aes(Scen_Deposit,mines_open))+
   geom_hline(yintercept = ref_values[1],linetype="dashed",col="#000000")+ #ref 
   geom_vline(xintercept = 0.5,col="grey",linewidth=0.15)+
   coord_flip()+
-  scale_y_continuous(breaks = c(0,25,50,75,100))+
+  # scale_y_continuous(breaks = c(0,25,50,75,100))+
   labs(x="",col="Demand Scenario",y=y_title,
        title="(B) N-1 Country Analysis")+
   guides(color = guide_legend(nrow = 2, byrow = TRUE))+
@@ -394,6 +436,41 @@ p2 <- ggplot(data_fig2,aes(Scen_Deposit,mines_open))+
         legend.position = "none",
         axis.ticks.y = element_blank())
 p2
+
+
+
+scen_abr <- tibble(
+  name=paste0("(",1:9,")"),
+  name_abr=name_abbr)
+
+# Heat map
+data_fig2 %>% 
+  mutate(name=substr(name,0,3)) %>% 
+  left_join(scen_abr) %>% 
+  mutate(name_abr=factor(name_abr,levels=name_abbr)) %>% 
+  mutate(aux_height=if_else(Scen_Deposit=="Reference",0.7,1)) %>% 
+  ggplot(aes(name_abr,Scen_Deposit))+
+  geom_tile(aes(fill=mines_open,height=aux_height),
+            col="black",linewidth=0.1)+
+  # geom_text(aes(label=mines_open),col="#3A3A3A")+
+  geom_text(aes(label = mines_open,
+                fontface = ifelse(Scen_Deposit == "Reference", "bold", "plain")),
+            size=7*5/14 * 0.8) +
+  coord_cartesian(expand=F)+
+  labs(x="Demand Scenario",
+       y="N-1",
+       fill="Number of \nnew opened \nDeposits")+
+  scale_fill_gradient(low = "white", high = "purple") +  # Change "purple" to "red" if preferred
+  theme_minimal(8)+
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+        axis.title.y=element_text(angle=0,margin=margin(r=-10)),
+        axis.text.y = element_text(face = ifelse(unique(data_fig2$Scen_Deposit) == "Reference", "bold", "plain")))
+
+# save
+ggsave("N_analysis.png", ggplot2::last_plot(),
+       units="cm",dpi=600,
+       width=13,height=8.7)
+
 
 # Combined Figure ----------
 

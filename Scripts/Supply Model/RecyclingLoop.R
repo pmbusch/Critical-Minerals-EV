@@ -6,6 +6,7 @@
 
 # Load Data -----------
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
+source("Scripts/01-CommonVariables.R", encoding = "UTF-8")
 theme_set(theme_bw(8)+ theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.title.y=element_text(angle=0,margin=margin(r=0))))
 
 
@@ -31,20 +32,19 @@ prod_rate <- expand.grid(Deposit_Name=unique(deposit$Deposit_Name),
     T ~ prod_rate2030)) %>% 
   dplyr::select(Deposit_Name,t,prod_rate)
 
-# bigM_cost <- 1e6 # same as Julia
-bigM_cost <- 100000*5.323 # historic high was 68K for LCE
-discount_rate <- 0.07 
-
-
 ## Recycling Supply Scenarios -------------
 # Get list of all folders inside "Results/Optimization"
 (runs <- list.dirs("Results/Optimization/DemandRecyclingLoop",recursive = F))
 (dict_scen <- tibble(Scenario=runs) %>% 
     mutate(name=case_when(
-      str_detect(Scenario,"High") ~ "High Capacity LIB",
-      str_detect(Scenario,"Low") ~ "Low Capacity LIB",
+      str_detect(Scenario,"High") ~ "Large Capacity LIB",
+      str_detect(Scenario,"Low") ~ "Small Capacity LIB",
       T ~ "Reference"),
       recyc= as.numeric(str_extract(Scenario, "(?<=percentage )\\d+"))/100))
+
+opt_param <- read.csv(file.path(runs[1], "OptimizationInputs.csv"))
+(bigM_cost <- opt_param[2,2])
+(discount_rate <- opt_param[1,2] )
 
 # Read all results and put them in the same dataframe!
 df_results <- do.call(rbind, lapply(runs, function(folder_path)
@@ -88,7 +88,7 @@ data_fig <- df_results %>%
   filter(t<2051) %>%
   group_by(name,recyc) %>% 
   reframe(mines_open=sum(new_mine_open)) %>%  ungroup() %>% 
-  mutate(name=factor(name,levels=c("High Capacity LIB","Reference","Low Capacity LIB")))
+  mutate(name=factor(name,levels=c("Large Capacity LIB","Reference","Small Capacity LIB")))
 
 ggplot(data_fig,aes(recyc,mines_open,col=name))+
   # geom_line()+
@@ -96,13 +96,13 @@ ggplot(data_fig,aes(recyc,mines_open,col=name))+
   # geom_smooth(se=F)+
   coord_cartesian(expand = F,ylim=c(0,90))+
   scale_x_continuous(labels=scales::percent,limits = c(0,1),breaks = seq(0.05,0.95,0.1))+
-  scale_color_manual(values = c( "Reference" = "#000000","High Capacity LIB"="#8B0000",
-                                 "Low Capacity LIB"="#56B4E9"))+
-  labs(x="Global Lithium Recovery (%)",y="",title="New Deposits openings required by 2050",
+  scale_color_manual(values = c( "Reference" = "#000000","Large Capacity LIB"="#8B0000",
+                                 "Small Capacity LIB"="#56B4E9"))+
+  labs(x="Global Lithium Recovery Scenario (%)",y="",title="New Deposits openings required by 2050",
        col="Battery Capacity Scenario")+
-  theme(legend.position = c(0.7,0.8),
+  theme(legend.position = c(0.75,0.9),
         # axis.text.x = element_text(hjust = 1),
-        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = "lightgray"),
         legend.key.height= unit(0.25, 'cm'),
         legend.key.width= unit(0.25, 'cm'))
   
