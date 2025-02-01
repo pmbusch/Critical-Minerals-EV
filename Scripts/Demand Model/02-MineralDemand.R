@@ -96,9 +96,9 @@ weighted_avg_index <- function(vec) {
 
 # scen_level <- c("Baseline","Momentum","Ambitious")
 scen_level <- c("Ambitious")
-# chems_scen <- c("Baseline","Double LFP","Double NMC 811",
-#                 "Solid State adoption","Sodium Battery adoption")
-chems_scen <- c("Baseline")
+chems_scen <- c("Baseline","Double LFP","Double NMC 811",
+                "Solid State adoption","Sodium Battery adoption")
+# chems_scen <- c("Baseline")
 capacity_scen <- c("Baseline","Low Capacity","High Capacity")
 # lifetime_scen <- c("Baseline","Long duration")
 lifetime_scen <- c("Baseline")
@@ -113,7 +113,7 @@ df_region_final <- c()
 df_country_final <- c() # slow, only for selected scenarios
 start_time <- proc.time()
 # debug
-scen=scen_level[1];scen_chem=chems_scen[1];scen_bat=capacity_scen[2];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
+scen=scen_level[1];scen_chem=chems_scen[4];scen_bat=capacity_scen[2];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
 # scen=scen_level[3];scen_chem=chems_scen[1];scen_bat=capacity_scen[1];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
 length(scen_level)*length(chems_scen)*length(capacity_scen)*length(lifetime_scen)*length(recycling_scen)
 for (scen in scen_level){

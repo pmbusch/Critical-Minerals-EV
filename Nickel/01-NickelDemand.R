@@ -73,5 +73,4 @@ df_sector %>% filter(Mineral=="Cobalt") %>%
 df_region %>% filter(Mineral=="Cobalt") %>% 
   write.csv("Nickel/Parameters/Cobalt_Demand_Region.csv",row.names = F)
 
-
 # EoF

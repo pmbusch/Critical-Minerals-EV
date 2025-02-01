@@ -5,6 +5,8 @@
 
 
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
+source("Scripts/01-CommonVariables.R", encoding = "UTF-8")
+
 
 # load and prepare data -----
 df <- read.csv("Results/MineralDemand_FewScenarios.csv") # much faster
@@ -236,7 +238,7 @@ demandSector <- df_sector2 %>% filter(Mineral=="Nickel")
 demandRegion <- df_region %>% filter(Mineral=="Nickel")
 
 data_fig1 <- demand %>% 
-  filter(t<2051) %>% 
+  filter(t<2051) %>%
   group_by(Scenario,t) %>%
   reframe(kton=sum(Demand)) %>% ungroup() %>% 
   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
