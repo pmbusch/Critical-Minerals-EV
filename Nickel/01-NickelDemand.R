@@ -10,7 +10,7 @@ df <- read.csv("Results/MineralDemand_FewScenarios.csv") # much faster
 
 
 # Filter
-df <- df %>% filter(Mineral %in% c("Nickel","Cobalt"))
+df <- df %>% filter(Mineral %in% c("Nickel","Cobalt","Copper","Battery_MWh"))
 
 # Combine Scenarios
 df <- df %>% mutate(Scenario=paste(Scenario,
@@ -72,5 +72,26 @@ df_sector %>% filter(Mineral=="Cobalt") %>%
   write.csv("Nickel/Parameters/Cobalt_Demand_Detail.csv",row.names = F)
 df_region %>% filter(Mineral=="Cobalt") %>% 
   write.csv("Nickel/Parameters/Cobalt_Demand_Region.csv",row.names = F)
+
+# Copper
+df %>% filter(Mineral=="Copper") %>% 
+  write.csv("Nickel/Parameters/Copper_Demand.csv",row.names = F)
+df_recyc %>% filter(Mineral=="Copper") %>% 
+  write.csv("Nickel/Parameters/Copper_Recycling.csv",row.names = F)
+df_sector %>% filter(Mineral=="Copper") %>% 
+  write.csv("Nickel/Parameters/Copper_Demand_Detail.csv",row.names = F)
+df_region %>% filter(Mineral=="Copper") %>% 
+  write.csv("Nickel/Parameters/Copper_Demand_Region.csv",row.names = F)
+
+# Battery
+df %>% filter(Mineral=="Battery_MWh") %>% 
+  write.csv("Nickel/Parameters/BatteryGWh_Demand.csv",row.names = F)
+df_recyc %>% filter(Mineral=="Battery_MWh") %>% 
+  write.csv("Nickel/Parameters/BatteryGWh_Recycling.csv",row.names = F)
+df_sector %>% filter(Mineral=="Battery_MWh") %>% 
+  write.csv("Nickel/Parameters/BatteryMWh_Demand_Detail.csv",row.names = F)
+df_region %>% filter(Mineral=="Battery_MWh") %>% 
+  write.csv("Nickel/Parameters/BatteryMWh_Demand_Region.csv",row.names = F)
+
 
 # EoF

@@ -10,7 +10,8 @@ vehicle_level <- read_excel("Data/Dimensions.xlsx",sheet="Vehicle")$Vehicle
 scen_level <- c("Baseline","Momentum","Ambitious")
 
 # Run all demand for all minerals in the model, filter later for min. of interest.
-min_interest3 <- c("Lithium","Nickel","Cobalt","Manganese","Phosphorus")
+min_interest3 <- c("Lithium","Nickel","Cobalt","Manganese","Phosphorus",
+                   "Graphite","Copper")
 min_interest2 <- c("Lithium","Nickel","Cobalt","Manganese")
 min_interest <- c("Lithium","Nickel","Cobalt")
 

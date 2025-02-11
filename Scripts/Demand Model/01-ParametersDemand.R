@@ -23,9 +23,9 @@ cathode_scrap <- 0.04 #
 # 90% for cobalt, nickel, copper and lead by the end of 2027, rising to 95% in 2031; 
 # and 50% for lithium by 2027, rising to 80% in 2031.
 EU_targets <- tibble(
-  Mineral=c("Lithium","Nickel","Cobalt","Manganese","Phosphorus"),
-  mat_recov_recyc1=c(0.5,0.9,0.9,0,0),
-  mat_recov_recyc2=c(0.8,0.95,0.95,0,0),
+  Mineral=c("Lithium","Nickel","Cobalt","Manganese","Phosphorus","Copper","Graphite"),
+  mat_recov_recyc1=c(0.5,0.9,0.9,0,0,0.05,0),
+  mat_recov_recyc2=c(0.8,0.95,0.95,0,0,0.05,0),
   dummy=1) %>% 
   left_join(tibble(Year=2022:2070,dummy=1),
             relationship = "many-to-many") %>% 
@@ -38,8 +38,8 @@ EU_targets <- tibble(
 
 # Levels right now
 China_targets <- tibble(
-  Mineral=c("Lithium","Nickel","Cobalt","Manganese","Phosphorus"),
-  China_mat_recove=c(0.85,0.98,0.98,0.98,0))
+  Mineral=c("Lithium","Nickel","Cobalt","Manganese","Phosphorus","Copper","Graphite"),
+  China_mat_recove=c(0.85,0.98,0.98,0.98,0,0.05,0))
 
 
 mat_recovery_recycling <- tibble(recycling_scenarios=recycling_scenarios$recycling_scenario) %>% 
@@ -56,6 +56,14 @@ mat_recovery_recycling <- tibble(recycling_scenarios=recycling_scenarios$recycli
     Region %in% c("China") ~ China_mat_recove,
     T ~mat_recov_recyc),
     EU_mat_recov_recyc=NULL,China_mat_recove=NULL)
+
+# add Copper enhanced recycling 64% today to 95% 2031
+mat_recovery_recycling <- mat_recovery_recycling %>% 
+  mutate(mat_recov_recyc=case_when(
+    Mineral!="Copper"~mat_recov_recyc,
+    recycling_scenarios!="Enhanced recycling"~mat_recov_recyc,
+    Year>2031 ~ 0.95,
+    T ~0.64+(0.95-0.64)/9*(Year-2022))) # linear increase
 
 
 # Scenario for USA adopting EU standards
@@ -100,6 +108,7 @@ global_rec_scenarios <- tibble(mat_recov_recyc1=rec_levels,
 
 
 rm(EU_targets,China_targets)
+
 
 
 # EoF

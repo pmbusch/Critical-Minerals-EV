@@ -35,6 +35,7 @@ stationary_SIB$Vehicle <- "Stationary Power Storage"
 ## Mineral intensity -----
 
 mineral <- read_excel("Data/Demand Model/Mineral_Intensity.xlsx",sheet = "BatPac")
+min_interest3 <- c(min_interest3,"Battery_MWh")
 
 ## Reuse statistics from Survival Model -----
 reuse <- read.csv("Parameters/Demand Intermediate Results/region_outflows_LIB.csv",
