@@ -2,6 +2,7 @@
 # PBH February 2024
 
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
+source("Scripts/01-CommonVariables.R")
 
 # load demand results -----
 # df <- read.csv("Results/MineralDemandRegion.csv")
@@ -61,14 +62,18 @@ write.csv(df_region,"Parameters/Demand_Region.csv",row.names = F)
 
 
 # Figure
-ggplot(df,aes(t,Demand,group=Scenario))+
+df %>% 
+  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
+  mutate(name=factor(name,levels=scens_names)) %>% 
+  # filter(str_detect(name,"9")) %>% 
+  ggplot(aes(t,Demand,group=name))+
   # geom_line(alpha=.5,col="darkgrey")+
-  geom_line(alpha=.5,aes(col=Scenario))+
+  geom_line(alpha=.5,aes(col=name))+
   coord_cartesian(expand = F)+
   scale_x_continuous(breaks = c(2022,seq(2030,2070,10)))+
-  labs(x="",y="Lithium \n Demand \n [ktons]")+
+  labs(x="",y="Lithium \n Demand \n [ktons]",col="")+
   theme(axis.text.x = element_text(hjust=0.8),
-        legend.position = "none")
+        legend.position = "right")
         # legend.position = "bottom")
 
 # Recycling  

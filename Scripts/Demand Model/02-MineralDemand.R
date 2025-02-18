@@ -114,7 +114,7 @@ df_region_final <- c()
 df_country_final <- c() # slow, only for selected scenarios
 start_time <- proc.time()
 # debug
-scen=scen_level[1];scen_chem=chems_scen[4];scen_bat=capacity_scen[2];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
+scen=scen_level[1];scen_chem=chems_scen[1];scen_bat=capacity_scen[1];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[2];
 # scen=scen_level[3];scen_chem=chems_scen[1];scen_bat=capacity_scen[1];scen_life=lifetime_scen[1];scen_recyc=recycling_scen[1];
 length(scen_level)*length(chems_scen)*length(capacity_scen)*length(lifetime_scen)*length(recycling_scen)
 for (scen in scen_level){
@@ -231,11 +231,12 @@ for (scen in scen_level){
             perc_ssps=0.5
           }
           
-          reuse_car <- reuse_car %>%
-            mutate(perc_lib_ssps=perc_lib_available*perc_ssps,
-          # LIBs that failed and LIBs in good condition that are old
-                   perc_lib_recycling=perc_lib_recycling+
-                     perc_lib_available*(1-perc_ssps)) 
+          # MAYBE DELETE -FEBRUARY 2025
+          # reuse_car <- reuse_car %>%
+          #   mutate(perc_lib_ssps=perc_lib_available*perc_ssps,
+          # # LIBs that failed and LIBs in good condition that are old
+          #          perc_lib_recycling=perc_lib_recycling+
+          #            perc_lib_available*(1-perc_ssps)) 
           
           # head(reuse_car) # some columns are vectors with the flow of EVs from age 1 to 30
           
@@ -263,13 +264,15 @@ for (scen in scen_level){
             rowwise() %>% # MULTIPLY VECTORS rowise
             mutate(add_kwh_failure = sum(kwh_veh * add_LIB_vector),
           #         # LIBs that failed and LIBs in good condition that are old
-                   kwh_veh_recycling = sum(kwh_veh * LIB_recycling_vector)+
-                     sum(kwh_veh * LIB_Available_vector)*(1-perc_ssps), 
-                   lib_kwh_ssps = sum(kwh_veh * LIB_Available_vector)*perc_ssps) %>%  
+                   kwh_veh_recycling = sum(kwh_veh * LIB_recycling_vector),
+                     # sum(kwh_veh * LIB_Available_vector)*(1-perc_ssps),
+                  kwh_veh_available = sum(kwh_veh * LIB_Available_vector)) %>% 
+                   # lib_kwh_ssps = sum(kwh_veh * LIB_Available_vector)*perc_ssps) %>%  
             ungroup() %>% 
             mutate(add_kwh_failure = add_kwh_failure*perc_add_lib,
-                   kwh_veh_recycling = kwh_veh_recycling*perc_lib_recycling,
-                   lib_kwh_ssps = lib_kwh_ssps*perc_lib_ssps) %>%
+                   kwh_veh_recycling = kwh_veh_recycling*perc_lib_recycling+
+                     kwh_veh_available*perc_lib_available*(1-perc_ssps),
+                   lib_kwh_ssps = kwh_veh_available*perc_lib_available*perc_ssps) %>%
             dplyr::select(-kwh_veh,-LIB_recycling_vector,-LIB_Available_vector,-join_dummy,
                           -add_LIB_vector)
           
@@ -284,7 +287,7 @@ for (scen in scen_level){
             mutate(lib_additional_kwh=add_kwh_failure*Sales,
                    lib_recycling_kwh=kwh_veh_recycling*Sales,
                    lib_ssps_kwh=lib_kwh_ssps*Sales) %>% 
-            dplyr::select(-kwh_veh_recycling,-lib_kwh_ssps,-perc_lib_ssps,-perc_lib_recycling,
+            dplyr::select(-kwh_veh_recycling,-lib_kwh_ssps,-perc_lib_recycling,
                           -perc_add_lib,-add_kwh_failure,-perc_lib_available)
           
           # rest of vehicles: same size and chemistry during whole period
@@ -316,6 +319,7 @@ for (scen in scen_level){
           # join to cars lib_outflow
           lib_outflow_car$Powertrain <- lib_outflow_car$Vehicle <- NULL
           lib_outflow_car$Sales <- lib_outflow_car$kwh_veh <- NULL
+          lib_outflow_car$kwh_veh_available <- NULL
           
           lib_outflow <- rbind(lib_outflow,lib_outflow_car) %>% 
             group_by(Region,Country,Year,chemistry) %>% 
@@ -535,7 +539,7 @@ df_scen <- df_region_final %>%
                         lifetime_scenario,recycling_scenario,sep="-"))
   # filter(scen_all %in% scens_selected)
 df_scen$scen_all %>% unique()
-write.csv(df_scen,"Results/MineralDemand_FewScenarios.csv",row.names = F)
+write.csv(df_scen,"Results/MineralDemand_FewScenarios2.csv",row.names = F)
 # recycling loop
 # write.csv(df_scen,"Results/MineralDemand_RecyclingLoop.csv",row.names = F)
 
