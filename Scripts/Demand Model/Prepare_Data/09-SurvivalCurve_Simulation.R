@@ -181,7 +181,7 @@ for (reg in regions){
           # Loop through years
           icct$Year %>% range()
           icct$add_LIB <-icct$LIB_Available <- icct$LIB_recycling <- icct$LIB_reuse_EV <- icct$EV_Stock <- 0
-          icct$add_LIB_vector <-icct$LIB_Available_vector <- icct$LIB_recycling_vector <- c()
+          icct$add_LIB_vector <-icct$LIB_Available_vector <- icct$LIB_recycling_vector <- icct$EV_Stock_vector <- c()
             
           for (y in start_year:2070){
             
@@ -288,6 +288,8 @@ for (reg in regions){
             icct$LIB_recycling_vector[y-start_year+1] <- list(round(lib_failed,0))
             icct$LIB_reuse_EV[y-start_year+1] <- round(allocation,0)
             icct$EV_Stock[y-start_year+1] <- round(sum(new_matrix),0)
+			icct$EV_Stock_vector[y-start_year+1] <- list(unname(round(rowSums(new_matrix)[-1],0)))
+            
             
             
             # end for loop, next year

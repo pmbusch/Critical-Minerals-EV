@@ -101,8 +101,8 @@ chems_scen <- c("Baseline","Double LFP","Double NMC 811",
                 "Solid State adoption","Sodium Battery adoption")
 # chems_scen <- c("Baseline")
 capacity_scen <- c("Baseline","Low Capacity","High Capacity")
-# lifetime_scen <- c("Baseline","Long duration")
-lifetime_scen <- c("Baseline")
+lifetime_scen <- c("Baseline","Long duration")
+# lifetime_scen <- c("Baseline")
 recycling_scen <- recycling_scenarios$recycling_scenario %>% unique()
 
 # global rec scenarios - uncomment to run demand loop
@@ -539,7 +539,7 @@ df_scen <- df_region_final %>%
                         lifetime_scenario,recycling_scenario,sep="-"))
   # filter(scen_all %in% scens_selected)
 df_scen$scen_all %>% unique()
-write.csv(df_scen,"Results/MineralDemand_FewScenarios2.csv",row.names = F)
+write.csv(df_scen,"Results/MineralDemand_FewScenarios.csv",row.names = F)
 # recycling loop
 # write.csv(df_scen,"Results/MineralDemand_RecyclingLoop.csv",row.names = F)
 

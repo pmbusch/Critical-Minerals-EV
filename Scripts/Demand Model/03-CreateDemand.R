@@ -53,7 +53,7 @@ df$t %>% range()
 
 
 # save results
-write.csv(df,"Parameters/Demand.csv",row.names = F)
+write.csv(df,"Parameters/DemandSimon.csv",row.names = F)
 # write.csv(df,"Parameters/Demand_AllScenarios.csv",row.names = F)
 # write.csv(df,"Parameters/DemandRecyclingLoop.csv",row.names = F)
 write.csv(df_recyc,"Parameters/Recycling.csv",row.names = F)

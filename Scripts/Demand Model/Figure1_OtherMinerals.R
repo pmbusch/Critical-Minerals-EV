@@ -20,6 +20,7 @@ df <- df %>% mutate(Scenario=paste(Scenario,
                                    recycling_scenario,sep="-"))
 df$Scenario %>% unique()
 
+df <- df %>% filter(Mineral %in% min_interest)
 
 
 unique(df$Vehicle)
@@ -54,18 +55,24 @@ df$t %>% range()
 # FIGURES --------------
 theme_set(theme_bw(8)+ theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.title.y=element_text(angle=0,margin=margin(r=0))))
 
+data_fig <- df %>% 
+  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
+  filter(t<2051) %>% 
+  mutate(name=factor(name,levels=scens_names)) %>% 
+  mutate(scen_num=str_extract(name,paste(paste0(11:1),collapse="|")))
+
 # 2050 demand
-df %>% 
+data_fig %>% 
   filter(t==2050) %>% 
-  group_by(Mineral,Scenario) %>% 
+  group_by(Mineral,name) %>% 
   reframe(x=sum(Demand)) %>%  # in ktons
   ungroup() %>% group_by(Mineral) %>% 
   reframe(min=min(x),max=max(x))
 
 # upscale with respect to 2022
-df %>% 
+data_fig %>% 
   filter(t %in% c(2022,2050)) %>% 
-  group_by(Mineral,Scenario,t) %>%
+  group_by(Mineral,name,t) %>%
   reframe(x=sum(Demand)) %>%  # in ktons
   pivot_wider(names_from = t, values_from = x) %>% 
   mutate(ratio=`2050`/`2022`) %>% 
@@ -74,24 +81,23 @@ df %>%
 
 
 # cumulative demand
-df %>% 
-  filter(t<2051) %>% 
-  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
-  group_by(Mineral,name) %>% 
+cum_demand <- data_fig %>% 
+  mutate(Mineral=factor(Mineral,levels=min_interest3)) %>% 
+  group_by(Mineral,name,scen_num) %>% 
   reframe(x=sum(Demand)/1e3) %>% 
   pivot_wider(names_from = Mineral, values_from = x)
+cum_demand
 .Last.value %>% write.table("clipboard", sep="\t",row.names = F)
 
   
 # Change with respect to reference scenario
 # cumulative demand
-df %>% 
-  filter(t<2051) %>% 
-  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
+data_fig %>% 
+  mutate(Mineral=factor(Mineral,levels=min_interest3)) %>% 
   group_by(Mineral,name) %>% 
   reframe(x=sum(Demand)) %>% 
   mutate(name=str_remove_all(name,"\\(\\d{1,2}\\) ")) %>% 
-  pivot_wider(names_from = name, values_from = x) %>% 
+  pivot_wider(names_from = name, values_from = x) %>%
   pivot_longer(c(-Mineral,-Reference), 
                names_to = "name", values_to = "x") %>% 
   mutate(rel_change=(x-Reference)/Reference) %>% 
@@ -100,9 +106,15 @@ df %>%
 .Last.value %>% write.table("clipboard", sep="\t",row.names = F)
   
 # peak demand
-df %>% 
-  filter(t<2051) %>% 
-  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
+peak_demand <- data_fig %>% 
+  mutate(Mineral=factor(Mineral,levels=min_interest3)) %>% 
+  group_by(Mineral,name) %>% 
+  reframe(x=max(Demand)) %>% 
+  pivot_wider(names_from = Mineral, values_from = x)
+peak_demand
+
+data_fig %>% 
+  mutate(Mineral=factor(Mineral,levels=min_interest3)) %>% 
   group_by(Mineral,name) %>% 
   reframe(x=max(Demand)) %>%  # change to max
   mutate(name=str_remove_all(name,"\\(\\d{1,2}\\) ")) %>% 
@@ -114,6 +126,33 @@ df %>%
   pivot_wider(names_from = Mineral, values_from = rel_change)
 .Last.value %>% write.table("clipboard", sep="\t",row.names = F)
 
+
+# Compare demand and peak production to 2024 USGS data
+# in Mtons
+# reserves
+cum_demand_usgs=cum_demand
+cum_demand_usgs$Lithium=cum_demand_usgs$Lithium/30
+cum_demand_usgs$Nickel=cum_demand_usgs$Nickel/130
+cum_demand_usgs$Cobalt=cum_demand_usgs$Cobalt/11
+cum_demand_usgs
+.Last.value %>% write.table("clipboard-16384", sep="\t",row.names = F)
+
+# Resources
+cum_demand_usgs=cum_demand
+cum_demand_usgs$Lithium=cum_demand_usgs$Lithium/115
+cum_demand_usgs$Nickel=cum_demand_usgs$Nickel/350
+cum_demand_usgs$Cobalt=cum_demand_usgs$Cobalt/25
+cum_demand_usgs
+.Last.value %>% write.table("clipboard-16384", sep="\t",row.names = F)
+
+
+# Peak Prod - in ktons
+peak_demand_usgs=peak_demand
+peak_demand_usgs$Lithium=peak_demand_usgs$Lithium/240
+peak_demand_usgs$Nickel=peak_demand_usgs$Nickel/3700
+peak_demand_usgs$Cobalt=peak_demand_usgs$Cobalt/290
+peak_demand_usgs
+.Last.value %>% write.table("clipboard", sep="\t",row.names = F)
 
 
 
@@ -127,7 +166,8 @@ data_fig1 <- demand %>%
   group_by(Scenario,t) %>%
   reframe(kton=sum(Demand)) %>% ungroup() %>% 
   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
-  mutate(scen_num=substr(name,1,3))
+  mutate(name=factor(name,levels=scens_names)) %>% 
+  mutate(scen_num=str_extract(name,paste(paste0("\\(",1:11,"\\)"),collapse="|")))
 
 cum_demand <- data_fig1 %>% group_by(name) %>% 
   reframe(Mton=sum(kton)/1e3) %>% ungroup() %>% arrange(desc(Mton))
@@ -138,13 +178,15 @@ p1 <- ggplot(data_fig1)+
   geom_line(data=filter(data_fig1,str_detect(name,"Refere")),
             aes(t,kton,group=name,col=name),alpha=.7,linewidth=.8)+
   geom_text(data=filter(data_fig1,t==2050),show.legend = F,
-            aes(label=scen_num,y=kton,col=name),x=2050.5,
+            aes(label=scen_num,y=kton,col=name),x=2050.5+
+              c(-0.3,-0.3,0,0,0,0,0,0.3,0.3,0,0), # nudge x
             size=6*5/14 * 0.8,
             # order: 1,8,9,2,3,5,4,7,6
-            nudge_y = c(0,1.7,0,-0.5,0,-1,1,-1.2,0)*5e1)+
-  coord_cartesian(expand=F,xlim=c(2022,2051))+
-  labs(x="",y="",col="Demand Scenario",
-       title="(A) Lithium Demand [ktons]")+
+            nudge_y = c(0,2,0,-0.8,0,0,0,0.5,2,-0.2,0)*5e1)+
+  coord_cartesian(expand=F,xlim=c(2022,2051.1),
+                  ylim=c(0,max(data_fig1$kton)*1.02))+
+  labs(x="",y="",col="Demand Scenario",tag="(a)",
+       title="Lithium Demand [ktons]")+
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
   scale_y_continuous(limits = c(0,NA),labels = scales::comma_format(big.mark = ' '))+
   scale_color_manual(values = scen_colors)+
@@ -152,8 +194,9 @@ p1 <- ggplot(data_fig1)+
         axis.text.x = element_text(hjust = 1,size=9),
         axis.text.y = element_text(size=9),
         # legend.position = "none",
-        legend.position = c(0.18,0.69),
-        legend.text = element_text(size=5.5),
+        legend.position = c(0.18,0.64),
+        plot.tag = element_text(face = "bold"),
+        legend.text = element_text(size=5.3),
         legend.background = element_rect(fill = "transparent", color = NA),
         legend.key.height= unit(0.25, 'cm'),
         legend.key.width= unit(0.25, 'cm'))
@@ -174,19 +217,29 @@ data_fig1a <- demandSector %>%
   filter(t<2051) %>% 
   group_by(Scenario,Sector) %>% 
   reframe(Demand=sum(Demand)/1e6) %>% 
-  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
-  mutate(name=substr(name,1,3))
+  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>%
+  left_join(cum_demand) %>% 
+  mutate(name=paste0("",str_extract(name,paste(paste0(11:1),collapse = "|")))) %>% 
+  mutate(name=factor(name,levels=paste0("",1:11))) %>% 
+  group_by(name) %>% 
+  mutate(lab_total=paste0(format(round(Mton,0),nsmall=0),""),
+         # adjust label position for recycling effect
+         pos_lab=Mton-if_else(Sector=="Recycling",Demand,0)) %>% ungroup()
+
 
 p1a <- ggplot(data_fig1a,aes(name,Demand,fill=Sector))+
   geom_col(col="black",linewidth=0.1)+
+  geom_text(data=filter(data_fig1a,Sector=="Recycling"),
+            nudge_y = 2,size=6*5/14 * 0.8,
+            aes(y=pos_lab,label=lab_total))+
   scale_fill_viridis_d(option = 7)+
-  labs(x="Scenario",y="",title = "(B) Li Cumulative Demand [Mtons]",
-       fill="")+
+  labs(x="Scenario",y="",title = "Li Cumulative Demand [Mtons]",
+       fill="",tag="(b)")+
   theme(axis.text.y = element_text(size=9),
+        plot.tag = element_text(face = "bold"),
         axis.text.x = element_text(size=8.5),
         legend.text = element_text(size=6))
 p1a
-
 
 cowplot::plot_grid(p1,p1a,ncol=2,rel_widths = c(0.63,0.37))
 
@@ -208,8 +261,8 @@ data_fig <- demandRegion %>%
   filter(t<2051) %>% 
   group_by(Scenario,Region) %>%
   reframe(Demand=sum(Demand)/1e6) %>% ungroup() %>% 
-  left_join(tibble(Scenario=scens_selected,name=scens_names))
-
+  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
+  mutate(name=factor(name,levels=scens_names))
 
 p1_r <- ggplot(data_fig,aes(name,Demand,fill=Region))+
   geom_col(col="black",linewidth=0.1)+
@@ -219,10 +272,12 @@ p1_r <- ggplot(data_fig,aes(name,Demand,fill=Region))+
   scale_fill_manual(values=c("Middle East/Africa"="#D16D6F","Asia Pacific/Oceania"="#cab2d6",
                              "China"="#ff0000","Latin America"="#d95f02",
                              "North America"="#1f78b4","Europe"="#a6cee3"))+
-  labs(x="",y="",title = "Cumulative Lithium Demand [2022-2050] [Mtons]",fill="Region")+
+  labs(x="",y="",title = "Cumulative Lithium Demand [2022-2050] [Mtons]",
+       fill="Region",tag="(a)")+
   theme_bw(8)+ 
   theme(legend.text = element_text(size=6),
         axis.text.y = element_text(hjust=0),
+        plot.tag = element_text(face = "bold"),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         legend.position = "bottom")
@@ -242,7 +297,7 @@ data_fig1 <- demand %>%
   group_by(Scenario,t) %>%
   reframe(kton=sum(Demand)) %>% ungroup() %>% 
   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
-  mutate(scen_num=substr(name,1,3))
+  mutate(scen_num=str_extract(name,paste(paste0("\\(",1:11,"\\)"),collapse="|")))
 
 cum_demand <- data_fig1 %>% group_by(name) %>% 
   reframe(Mton=sum(kton)/1e3) %>% ungroup() %>% arrange(desc(Mton))
@@ -253,13 +308,15 @@ p2 <- ggplot(data_fig1)+
   geom_line(data=filter(data_fig1,str_detect(name,"Refere")),
             aes(t,kton,group=name,col=name),alpha=.7,linewidth=.8)+
   geom_text(data=filter(data_fig1,t==2050),show.legend = F,
-            aes(label=scen_num,y=kton,col=name),x=2050.5,
+            aes(label=scen_num,y=kton,col=name),x=2050.5+
+              c(-0.3,-0.3,0,0,0,0,0,0,0,0.3,0.3), # nudge x
             size=6*5/14 * 0.8,
-            # order: 1,8,9,2,3,5,4,7,6
-            nudge_y = c(0,2,0,-1,0,-1,1,2,-1)*100)+
-  coord_cartesian(expand=F,xlim=c(2022,2051))+
-  labs(x="",y="",col="Demand Scenario",
-       title="(C) Nickel Demand [ktons]")+
+            # order: 1,8,9,10,2,3,11,5,4,7,6
+            nudge_y = c(2,-2,1.5,0,0,0,-1.5,0,0,2,-2)*100)+
+  coord_cartesian(expand=F,xlim=c(2022,2051.1),
+                  ylim=c(0,max(data_fig1$kton)*1.02))+
+  labs(x="",y="",col="Demand Scenario",tag="(c)",
+       title="Nickel Demand [ktons]")+
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
   scale_y_continuous(limits = c(0,NA),labels = scales::comma_format(big.mark = ' '))+
   scale_color_manual(values = scen_colors)+
@@ -267,6 +324,7 @@ p2 <- ggplot(data_fig1)+
         axis.text.x = element_text(hjust = 1,size=9),
         axis.text.y = element_text(size=9),
         legend.position = "none",
+        plot.tag = element_text(face = "bold"),
         # legend.position = c(0.18,0.69),
         legend.text = element_text(size=5.5),
         legend.background = element_rect(fill = "transparent", color = NA),
@@ -285,20 +343,29 @@ data_fig1a <- demandSector %>%
     Vehicle %in% c("Car","Van") ~ 'Car',
     Vehicle=="Other Sectors" & Powertrain=="Stainless Steel" ~ "Stainless Steel",
     T ~ Vehicle) %>% 
-      factor(levels = c("Stainless Steel","Other Sectors","SSPS","2-3 Wheelers",
+      factor(levels = c("Other Sectors","Stainless Steel","SSPS","2-3 Wheelers",
                         "Heavy-duty","LIB Replacement\nfor EVs","Car",'Recycling'))) %>% 
   filter(t<2051) %>% 
   group_by(Scenario,Sector) %>% 
   reframe(Demand=sum(Demand)/1e6) %>% 
   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
-  mutate(name=substr(name,1,3))
+  left_join(cum_demand) %>%
+  mutate(name=paste0("",str_extract(name,paste(paste0(11:1),collapse = "|")))) %>% 
+  mutate(name=factor(name,levels=paste0("",1:11))) %>% 
+  group_by(name) %>% 
+  mutate(lab_total=paste0(format(round(Mton,0),nsmall=0),""),
+         pos_lab=Mton-if_else(Sector=="Recycling",Demand,0)) %>% ungroup()
 
 p2a <- ggplot(data_fig1a,aes(name,Demand,fill=Sector))+
   geom_col(col="black",linewidth=0.1)+
+  geom_text(data=filter(data_fig1a,Sector=="Recycling"),
+            nudge_y = 10,size=6*5/14 * 0.8,angle=90,
+            aes(y=pos_lab,label=lab_total))+
   scale_fill_viridis_d(option = 7)+
-  labs(x="Scenario",y="",title = "(D) Ni Cumulative Demand [Mtons]",
-       fill="")+
+  labs(x="Scenario",y="",title = "Ni Cumulative Demand [Mtons]",
+       fill="",tag="(d)")+
   theme(axis.text.y = element_text(size=9),
+        plot.tag = element_text(face = "bold"),
         axis.text.x = element_text(size=8.5),
         legend.text = element_text(size=6))
 p2a
@@ -321,8 +388,8 @@ data_fig <- demandRegion %>%
   filter(t<2051) %>% 
   group_by(Scenario,Region) %>%
   reframe(Demand=sum(Demand)/1e6) %>% ungroup() %>% 
-  left_join(tibble(Scenario=scens_selected,name=scens_names))
-
+  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
+  mutate(name=factor(name,levels=scens_names))
 
 p2_r <- ggplot(data_fig,aes(name,Demand,fill=Region))+
   geom_col(col="black",linewidth=0.1)+
@@ -332,11 +399,13 @@ p2_r <- ggplot(data_fig,aes(name,Demand,fill=Region))+
   scale_fill_manual(values=c("Middle East/Africa"="#D16D6F","Asia Pacific/Oceania"="#cab2d6",
                              "China"="#ff0000","Latin America"="#d95f02",
                              "North America"="#1f78b4","Europe"="#a6cee3"))+
-  labs(x="",y="",title = "Cumulative Nickel Demand [2022-2050] [Mtons]",fill="Region")+
+  labs(x="",y="",title = "Cumulative Nickel Demand [2022-2050] [Mtons]",
+       fill="Region",tag="(b)")+
   theme_bw(8)+ 
   theme(legend.text = element_text(size=6),
         axis.text.y = element_text(hjust=0),
         panel.grid.major = element_blank(),
+        plot.tag = element_text(face = "bold"),
         panel.grid.minor = element_blank(),
         legend.position = "bottom")
 p2_r
@@ -354,7 +423,8 @@ data_fig1 <- demand %>%
   group_by(Scenario,t) %>%
   reframe(kton=sum(Demand)) %>% ungroup() %>% 
   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
-  mutate(scen_num=substr(name,1,3))
+  mutate(name=factor(name,levels=scens_names)) %>% 
+  mutate(scen_num=str_extract(name,paste(paste0("\\(",1:11,"\\)"),collapse="|")))
 
 cum_demand <- data_fig1 %>% group_by(name) %>% 
   reframe(Mton=sum(kton)/1e3) %>% ungroup() %>% arrange(desc(Mton))
@@ -365,13 +435,15 @@ p3 <- ggplot(data_fig1)+
   geom_line(data=filter(data_fig1,str_detect(name,"Refere")),
             aes(t,kton,group=name,col=name),alpha=.7,linewidth=.8)+
   geom_text(data=filter(data_fig1,t==2050),show.legend = F,
-            aes(label=scen_num,y=kton,col=name),x=2050.5,
+            aes(label=scen_num,y=kton,col=name),x=2050.5+
+              c(-0.3,-0.3,0,0,0,0,0,0,0,0.3,0.3), # nudge x
             size=6*5/14 * 0.8,
-            # order: 1,8,9,2,3,5,4,7,6
-            nudge_y = c(-0.5,0.3,0,-0.5,0,0,0,0.5,0)*3e1)+
-  coord_cartesian(expand=F,xlim=c(2022,2051))+
-  labs(x="",y="",col="Demand Scenario",
-       title="(E) Cobalt Demand [ktons]")+
+            # order: 1,8,9,10,2,3,11,5,4,7,6
+            nudge_y = c(1,-1,-1,0,0,0,1,0,0,1,-1)*2.5e1)+
+  coord_cartesian(expand=F,xlim=c(2022,2051.1),
+                  ylim=c(0,max(data_fig1$kton)*1.02))+
+  labs(x="",y="",col="Demand Scenario",tag="(e)",
+       title="Cobalt Demand [ktons]")+
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
   scale_y_continuous(limits = c(0,NA),labels = scales::comma_format(big.mark = ' '))+
   scale_color_manual(values = scen_colors)+
@@ -383,6 +455,7 @@ p3 <- ggplot(data_fig1)+
         legend.text = element_text(size=5.5),
         legend.background = element_rect(fill = "transparent", color = NA),
         legend.key.height= unit(0.25, 'cm'),
+        plot.tag = element_text(face = "bold"),
         legend.key.width= unit(0.25, 'cm'))
 p3
 
@@ -402,14 +475,23 @@ data_fig1a <- demandSector %>%
   group_by(Scenario,Sector) %>% 
   reframe(Demand=sum(Demand)/1e6) %>% 
   left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
-  mutate(name=substr(name,1,3))
+  left_join(cum_demand) %>%
+  mutate(name=paste0("",str_extract(name,paste(paste0(11:1),collapse = "|")))) %>% 
+  mutate(name=factor(name,levels=paste0("",1:11))) %>% 
+  group_by(name) %>% 
+  mutate(lab_total=paste0(format(round(Mton,0),nsmall=0),""),
+         pos_lab=Mton-if_else(Sector=="Recycling",Demand,0)) %>% ungroup()
 
 p3a <- ggplot(data_fig1a,aes(name,Demand,fill=Sector))+
   geom_col(col="black",linewidth=0.1)+
+  geom_text(data=filter(data_fig1a,Sector=="Recycling"),
+            nudge_y = 2,size=6*5/14 * 0.8,
+            aes(y=pos_lab,label=lab_total))+
   scale_fill_viridis_d(option = 7)+
-  labs(x="Scenario",y="",title = "(F) Co Cumulative Demand [Mtons]",
-       fill="")+
+  labs(x="Scenario",y="",title = "Co Cumulative Demand [Mtons]",
+       fill="",tag="(f)")+
   theme(axis.text.y = element_text(size=9),
+        plot.tag = element_text(face = "bold"),
         axis.text.x = element_text(size=8.5),
         legend.text = element_text(size=6))
 p3a
@@ -432,7 +514,9 @@ data_fig <- demandRegion %>%
   filter(t<2051) %>% 
   group_by(Scenario,Region) %>%
   reframe(Demand=sum(Demand)/1e6) %>% ungroup() %>% 
-  left_join(tibble(Scenario=scens_selected,name=scens_names))
+  left_join(tibble(Scenario=scens_selected,name=scens_names)) %>% 
+  mutate(name=factor(name,levels=scens_names))
+
 
 
 p3_r <- ggplot(data_fig,aes(name,Demand,fill=Region))+
@@ -443,11 +527,13 @@ p3_r <- ggplot(data_fig,aes(name,Demand,fill=Region))+
   scale_fill_manual(values=c("Middle East/Africa"="#D16D6F","Asia Pacific/Oceania"="#cab2d6",
                              "China"="#ff0000","Latin America"="#d95f02",
                              "North America"="#1f78b4","Europe"="#a6cee3"))+
-  labs(x="",y="",title = "Cumulative Cobalt Demand [2022-2050] [Mtons]",fill="Region")+
+  labs(x="",y="",title = "Cumulative Cobalt Demand [2022-2050] [Mtons]",
+       fill="Region",tag="(c)")+
   theme_bw(8)+ 
   theme(legend.text = element_text(size=6),
         axis.text.y = element_text(hjust=0),
         panel.grid.major = element_blank(),
+        plot.tag = element_text(face = "bold"),
         panel.grid.minor = element_blank(),
         legend.position = "bottom")
 p3_r
@@ -458,14 +544,23 @@ ggsave("Figures/MineralDemand/CoDemandRegion.png", ggplot2::last_plot(),
 ## Join all ------
 
 cowplot::plot_grid(
-  cowplot::plot_grid(p1,p1a,ncol=2,rel_widths = c(0.63,0.37)),
-  cowplot::plot_grid(p2,p2a,ncol=2,rel_widths = c(0.63,0.37)),
-  cowplot::plot_grid(p3,p3a,ncol=2,rel_widths = c(0.63,0.37)),
+  cowplot::plot_grid(p1,p1a,ncol=2,rel_widths = c(0.61,0.39)),
+  cowplot::plot_grid(p2,p2a,ncol=2,rel_widths = c(0.61,0.39)),
+  cowplot::plot_grid(p3,p3a,ncol=2,rel_widths = c(0.61,0.39)),
   nrow = 3)
 
 ggsave("Figures/Article/Fig1_AllMinerals.png", ggplot2::last_plot(),
        units="cm",dpi=600,
-       width=18.4,height=6.4*3)
+       width=18.4,height=6.6*3)
+
+# Join regions
+cowplot::plot_grid(p1_r+theme(legend.position = "none"),
+                   p2_r+theme(legend.position = "none"),
+                   p3_r,nrow = 3,rel_heights = c(1,1,1.2))
+
+ggsave("Figures/MineralDemand/DemandRegion.png", ggplot2::last_plot(),
+       units="cm",dpi=600,
+       width=12,height=6*3)
 
 
 # EoF

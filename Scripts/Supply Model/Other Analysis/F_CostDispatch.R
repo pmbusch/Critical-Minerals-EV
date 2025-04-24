@@ -13,7 +13,6 @@ source("Scripts/Supply Model/01-LoadOptimizationResults.R", encoding = "UTF-8")
 
 
 # Function to get last cost of dispatch per year
-
 df_results$name %>% unique()
 df <- df_results %>% filter(str_detect(name,"Reference"))
 
@@ -27,23 +26,20 @@ df_results %>%
     tons_extracted2>tons_extracted1 ~ cost2,
     T ~ cost1)) %>%
   group_by(name,t) %>% 
-  # Max cost
-  # slice_max(order_by = cost) %>% ungroup() %>%
-  # Top quantile cost
-  reframe(cost = DescTools::Quantile(cost, weights=tons_extracted,probs=0.8)) %>%
-  # Average
-  # reframe(cost = weighted.mean(cost, tons_extracted)) %>%
+  # slice_max(order_by = cost) %>% ungroup() %>% # Max cost
+  # reframe(cost = DescTools::Quantile(cost, weights=tons_extracted,probs=0.8)) %>%  # Top quantile cost
+  reframe(cost = weighted.mean(cost, tons_extracted)) %>%  # Average cost
   mutate(cost=cost/5.323) %>%  # to LCE
   # mutate(name=factor(name,levels=order_n)) %>%
   ggplot(aes(t,cost))+
   geom_line(aes(col=name))+
-  # coord_cartesian(expand = F)+
+  coord_cartesian(expand = F)+
   scale_x_continuous(breaks = c(2022, 2030, 2040, 2050))+
   scale_y_continuous(labels = scales::comma_format(big.mark = ' ',prefix = "$"))+
   scale_color_manual(values = scen_colors)+
   # ylim(0,max_slack*1.1)+
   theme_bw(8)+
-  labs(x="",y="",title="Average Extraction Cost [USD/ton LCE]",caption="All costs in 2022 $USD (no discount).",
+  labs(x="",y="",title="Average Extraction Cost [$USD2022/ton LCE]",
        col="Demand \nScenario")+
   theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
 
@@ -51,7 +47,6 @@ ggsave("Figures/Article/AverageCost.png",
        ggplot2::last_plot(),
        units="cm",dpi=600,
        width=18.4,height=8.7)
-
 
 # By also checking prod and capacity constraints --------
 

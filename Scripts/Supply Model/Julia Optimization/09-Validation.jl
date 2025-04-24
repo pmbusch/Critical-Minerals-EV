@@ -13,7 +13,6 @@ using LinearAlgebra
 # other potential path: Scripts/Supply Model/Julia Optimization/
 include("RunOptimization.jl")
 
-
 # Validation and Calibration with historical datadepositAll = DataFrame(CSV.File("Parameters/Deposit.csv"))
 demandValidation = DataFrame(CSV.File("Parameters/Validation/demand.csv"))
 depositValidation = DataFrame(CSV.File("Parameters/Validation/deposit.csv"))
