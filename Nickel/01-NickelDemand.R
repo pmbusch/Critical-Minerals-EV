@@ -4,6 +4,7 @@
 # PBH and PO November 2024
 
 source("Scripts/00-Libraries.R", encoding = "UTF-8")
+source("Scripts/01-CommonVariables.R")
 
 # load demand results -----
 df <- read.csv("Results/MineralDemand_FewScenarios.csv") # much faster
@@ -18,9 +19,45 @@ df <- df %>% mutate(Scenario=paste(Scenario,
                                    capacity_scenario,
                                    lifetime_scenario,
                                    recycling_scenario,sep="-"))
+df$chem_scenario <- df$capacity_scenario <- df$lifetime_scenario <- df$recycling_scenario <- df$scen_all <- NULL
+
 df$Scenario %>% unique()
 
+# Nickel Stainless steel scenarios ------
+
+demand_ss <- read.csv("Parameters/Demand Intermediate Results/Stainless_Steel_Scen.csv") 
+icct <- read.csv("Parameters/Demand Intermediate Results/ICCT_demand.csv")
+icct <- icct %>% filter(Sales>0) # reduce computational time
+dict_region <- icct %>% group_by(Region,Country) %>% tally() %>% mutate(n=NULL)
+demand_ss <- demand_ss %>% 
+  left_join(dict_region) %>% 
+  group_by(Year,ss_scen,Region) %>% 
+  reframe(tons_mineral=sum(tons_mineral)) %>% ungroup()
+
+# nickel demand no stainless steel
+dummy_demand <- df %>% filter(Mineral=="Nickel",Powertrain!="Stainless Steel")
+
+names(dummy_demand)
+demand_ni <- tibble(Scenario=unique(df$Scenario)) %>% 
+  cross_join(demand_ss) %>% 
+  mutate(Powertrain="Stainless Steel",Vehicle="Other Sectors",chemistry="Other Sectors",
+         Mineral="Nickel") 
+  
+unique(demand_ni$ss_scen)
+dummy_demand <- rbind(mutate(dummy_demand,ss_scen="GDP Elasticity 0.5"),
+                      mutate(dummy_demand,ss_scen="GDP Elasticity 1.2"),
+                      demand_ni)
+dummy_demand <- dummy_demand %>% 
+  mutate(Scenario=paste0(Scenario,"-Steel",ss_scen),ss_scen=NULL)
+
+df <- rbind(df,dummy_demand)
+
 # Scenarios -----
+
+# Filter Scenarios to include
+unique(df$Scenario)
+df <- df %>% filter(str_detect(Scenario,"Baseline-Baseline-Baseline-Baseline|Enhanced recycling|High|Low Capacity-Baseline-Baseline|NMC 811|LFP"))
+
 
 ## Recycling at country level, to get concentration index after -----
 df_recyc <- df %>% rename(t=Year) %>% 
@@ -106,6 +143,15 @@ df_sector2 %>% filter(Mineral=="Battery_MWh") %>%
   write.csv("Nickel/Parameters/Battery_MWh_Demand_GreaterDetail.csv",row.names = F)
 df_region %>% filter(Mineral=="Battery_MWh") %>% 
   write.csv("Nickel/Parameters/BatteryMWh_Demand_Region.csv",row.names = F)
+
+
+# Exploratory figures
+theme_set(theme_bw(8)+ theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.title.y=element_text(angle=0,margin=margin(r=0))))
+df %>% 
+  filter(Mineral=="Nickel") %>% 
+  # filter(str_detect(Scenario,"High")) %>% 
+  ggplot(aes(t,Demand,col=Scenario))+geom_line()
+
 
 
 # EoF

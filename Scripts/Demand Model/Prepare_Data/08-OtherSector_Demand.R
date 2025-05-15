@@ -255,4 +255,39 @@ range(demand$Year)
 # Save ----------
 write.csv(demand,"Parameters/Demand Intermediate Results/otherSector_demand.csv",row.names = F)
 
+# Stainless steel scenarios -------------
+
+# based on different drivers
+
+gdp_driver <- read_excel(url_file,"GDP","A1:D72")
+gdp_2018 <- gdp_driver %>% filter(year==2018) %>% pull(gdp)
+gdp_driver <- gdp_driver %>% filter(year>2021,year<2071) %>% 
+  mutate(ratio_2018=gdp/gdp_2018,
+         half_ratio=(gdp-gdp_2018)*0.5/gdp_2018+1,
+         above_ratio=(gdp-gdp_2018)*1.2/gdp_2018+1)
+gdp_driver
+
+# base case
+gdp_driver$ratio_2018*ni_2018*0.66/1e6
+
+
+
+
+# elasticity scenarios
+ss_scenarios <- tibble(Year=gdp_driver$year,
+                       `GDP Elasticity 0.5`=gdp_driver$half_ratio*ni_2018*0.66,
+                       `GDP Elasticity 1.2`=gdp_driver$above_ratio*ni_2018*0.66) %>% 
+  pivot_longer(c(-Year), names_to = "ss_scen", values_to = "tons_mineral") 
+sum(ss_scenarios$tons_mineral)/1e6
+
+# dissagregate based on gdp
+demand_ss <- gdp %>% rename(Country=ICCT_Country) %>% 
+  cross_join(ss_scenarios) %>% 
+  mutate(gdp=NULL,
+         tons_mineral=tons_mineral*perc_gdp,perc_gdp=NULL)
+sum(demand_ss$tons_mineral)/1e6
+
+write.csv(demand_ss,"Parameters/Demand Intermediate Results/Stainless_Steel_Scen.csv",
+          row.names = F)
+
 # EoF
